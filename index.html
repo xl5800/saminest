@@ -32,11 +32,8 @@
       <section class="hero section" id="home">
         <div class="hero-copy">
           <p class="eyebrow">DMV 本地华人生活信息</p>
-          <h1>找房、转租、买二手，不用再翻微信群。</h1>
-          <p>
-            聚合 Rockville、College Park、Arlington、Fairfax、Tysons 和 DC 的租房、
-            二手、搬家清仓信息。租房支持按你的位置筛选距离，并可一键打开地图导航。
-          </p>
+          <h1>DMV 华人租房与二手交易平台</h1>
+          <p>发布、查找和管理 DMV 地区的租房、转租、二手与搬家清仓信息。</p>
           <div class="hero-actions">
             <a class="primary-btn" href="#rentals">找租房</a>
             <a class="secondary-btn" href="#secondhand">看二手</a>
@@ -62,8 +59,7 @@
       <section class="section search-band">
         <div>
           <p class="eyebrow">快速筛选</p>
-          <h2>像 Craigslist 一样按位置和距离找房</h2>
-          <p class="hint">输入 Rockville、UMD、Tysons、Arlington 等 DMV 地点，或使用当前位置。</p>
+          <h2>查找信息</h2>
         </div>
         <div class="filters">
           <label>
@@ -137,6 +133,13 @@
         </div>
 
         <form class="post-form" id="postForm">
+          <div class="post-steps" aria-label="发布步骤">
+            <span class="is-active">1 选择类型</span>
+            <span>2 填写信息</span>
+            <span>3 上传图片</span>
+            <span>4 联系方式</span>
+          </div>
+
           <div class="form-row">
             <label>
               类型
@@ -165,10 +168,27 @@
             </label>
             <label>
               分类/房型
-              <input name="category" required placeholder="1B1B、单间、家具、电子产品等" />
+              <select name="category" id="categorySelect" required></select>
             </label>
           </div>
-          <div class="form-row rental-fields">
+          <div class="form-row rental-only">
+            <label>
+              押金
+              <input name="deposit" type="number" min="0" placeholder="例如 1000" />
+            </label>
+            <label>
+              租期
+              <select name="leaseTerm">
+                <option value="">可商议</option>
+                <option value="短租">短租</option>
+                <option value="3个月">3个月</option>
+                <option value="6个月">6个月</option>
+                <option value="12个月">12个月</option>
+                <option value="可续租">可续租</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-row rental-only">
             <label>
               入住时间
               <input name="moveIn" type="date" />
@@ -178,7 +198,21 @@
               <input name="nearby" placeholder="Metro、学校、公司或商圈" />
             </label>
           </div>
-          <div class="form-row rental-fields">
+          <div class="form-row rental-only">
+            <label class="check-label">
+              <input name="furnished" type="checkbox" />
+              带家具
+            </label>
+            <label class="check-label">
+              <input name="parking" type="checkbox" />
+              有停车
+            </label>
+            <label class="check-label">
+              <input name="petAllowed" type="checkbox" />
+              可养宠物
+            </label>
+          </div>
+          <div class="form-row rental-only">
             <label>
               房源位置
               <input name="address" placeholder="例如 Twinbrook Metro / 1327 Rockville Pike" />
@@ -188,10 +222,37 @@
               <input name="coordinates" placeholder="可选：39.0840,-77.1528" />
             </label>
           </div>
+          <div class="form-row secondhand-only">
+            <label>
+              新旧程度
+              <select name="condition">
+                <option value="">请选择</option>
+                <option value="全新">全新</option>
+                <option value="9成新">9成新</option>
+                <option value="7成新">7成新</option>
+                <option value="使用痕迹明显">使用痕迹明显</option>
+              </select>
+            </label>
+            <label>
+              取货地点
+              <input name="pickupLocation" placeholder="例如 Rockville Town Center / UMD 附近" />
+            </label>
+          </div>
+          <div class="form-row secondhand-only">
+            <label class="check-label">
+              <input name="negotiable" type="checkbox" />
+              可议价
+            </label>
+            <label class="check-label">
+              <input name="deliveryAvailable" type="checkbox" />
+              可送货
+            </label>
+          </div>
           <label>
-            上传图片
-            <input name="imageFile" type="file" accept="image/*" />
+            上传图片，最多 6 张
+            <input name="imageFile" id="imageFileInput" type="file" accept="image/*" multiple />
           </label>
+          <div class="image-preview-grid" id="imagePreviewGrid"></div>
           <label>
             图片链接备用
             <input name="image" type="url" placeholder="可选：如果暂时不上传图片，也可以粘贴图片网址" />
@@ -202,8 +263,9 @@
           </label>
           <label>
             描述
-            <textarea name="description" rows="5" required placeholder="写清楚位置、时间、交通、家具、看房方式和注意事项"></textarea>
+            <textarea name="description" rows="5" required placeholder="租房请写清交通、室友、看房方式；二手请写清尺寸、状态、取货方式。"></textarea>
           </label>
+          <div class="post-preview" id="postPreview"></div>
           <button class="primary-btn" type="submit">提交发布</button>
         </form>
       </section>
@@ -253,8 +315,12 @@
           密码
           <input name="password" type="password" minlength="6" required placeholder="至少 6 位" />
         </label>
-        <button class="primary-btn" type="submit">登录 / 注册</button>
-        <p class="hint">如果邮箱不存在，会自动注册。若开启邮箱验证，请先去邮箱确认。</p>
+        <button class="primary-btn" type="submit">登录</button>
+        <div class="login-actions">
+          <button class="secondary-btn" id="registerButton" type="button">注册新账号</button>
+          <button class="text-btn" id="forgotPasswordButton" type="button">忘记密码？</button>
+        </div>
+        <p class="hint">已有账号请直接登录。忘记密码可以发送重置邮件。</p>
       </form>
     </dialog>
 
