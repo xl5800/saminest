@@ -471,6 +471,7 @@ function cardTemplate(item) {
         <span class="fresh-badge">${timeAgo(item.updatedAt)}</span>
       </div>
       <div class="listing-body">
+        <div class="price">$${Number(item.price).toLocaleString()}</div>
         <h3>${escapeHtml(item.title)}</h3>
         <div class="meta">
           <span>${escapeHtml(item.area)}</span>
@@ -479,7 +480,6 @@ function cardTemplate(item) {
           ${cardExtraMeta(item)}
           ${distance ? `<span>·</span><span>${distance}</span>` : ""}
         </div>
-        <div class="price">$${Number(item.price).toLocaleString()}</div>
         <p class="desc">${escapeHtml(item.description)}</p>
         <div class="card-actions">
           <button type="button" data-detail="${item.id}">查看详情</button>
