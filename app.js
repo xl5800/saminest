@@ -1,4 +1,7 @@
 const STORAGE_KEY = "dmv-huaren-market-fallback-listings";
+const FAVORITES_KEY = "dmv-huaren-market-favorites";
+const DRAFTS_KEY = "dmv-huaren-market-drafts";
+const HISTORY_KEY = "dmv-huaren-market-history";
 
 const areaCoordinates = {
   Rockville: { lat: 39.083997, lng: -77.152758 },
@@ -135,6 +138,9 @@ const els = {
   imageFileInput: document.querySelector("#imageFileInput"),
   imagePreviewGrid: document.querySelector("#imagePreviewGrid"),
   postPreview: document.querySelector("#postPreview"),
+  saveDraftButton: document.querySelector("#saveDraftButton"),
+  postTypeDialog: document.querySelector("#postTypeDialog"),
+  closePostTypeDialog: document.querySelector("#closePostTypeDialog"),
   loginButton: document.querySelector("#loginButton"),
   loginDialog: document.querySelector("#loginDialog"),
   closeLoginDialog: document.querySelector("#closeLoginDialog"),
@@ -146,6 +152,10 @@ const els = {
   favoriteList: document.querySelector("#favoriteList"),
   messageList: document.querySelector("#messageList"),
   profileName: document.querySelector("#profileName"),
+  myPostList: document.querySelector("#myPostList"),
+  draftList: document.querySelector("#draftList"),
+  historyList: document.querySelector("#historyList"),
+  logoutButton: document.querySelector("#logoutButton"),
   typeSelect: document.querySelector("#typeSelect"),
   adminList: document.querySelector("#adminList"),
   pendingCount: document.querySelector("#pendingCount"),
@@ -165,6 +175,10 @@ let currentProfile = null;
 let userLocation = null;
 let listings = [];
 let selectedImageFiles = [];
+let favoriteIds = [];
+let draftListings = [];
+let historyIds = [];
+let editingListingId = null;
 
 init();
 
@@ -177,7 +191,9 @@ async function init() {
   updateLocationFromInput();
   await loadCurrentUser();
   await loadListings();
+  loadLocalState();
   render();
+  navigateTo(getRouteFromHash());
 }
 
 function setupSupabase() {
@@ -208,9 +224,30 @@ function bindEvents() {
   els.typeSelect.addEventListener("change", updatePostTypeFields);
   els.postForm.addEventListener("input", updatePostPreview);
   els.imageFileInput.addEventListener("change", handleImageSelection);
+  els.saveDraftButton.addEventListener("click", saveDraftFromForm);
+  els.closePostTypeDialog.addEventListener("click", () => els.postTypeDialog.close());
+  els.logoutButton.addEventListener("click", handleLoginButton);
+
+  window.addEventListener("hashchange", () => navigateTo(getRouteFromHash()));
+
+  document.querySelectorAll("[data-open-post]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      openPostTypeDialog();
+    });
+  });
+
+  document.querySelectorAll("[data-post-type-choice]").forEach((button) => {
+    button.addEventListener("click", () => {
+      startPost(button.dataset.postTypeChoice);
+    });
+  });
 
   document.querySelectorAll("[data-post-type]").forEach((link) => {
-    link.addEventListener("click", () => {
+    link.addEventListener("click", (event) => {
+      if (link.closest(".category-section")) return;
+      event.preventDefault();
+      startPost(link.dataset.postType);
       els.typeSelect.value = link.dataset.postType;
       updatePostTypeFields();
     });
@@ -231,8 +268,75 @@ function bindEvents() {
     if (copyButton) {
       navigator.clipboard?.writeText(copyButton.dataset.copyContact);
       copyButton.textContent = "已复制";
+      return;
+    }
+
+    const favoriteButton = event.target.closest("[data-favorite]");
+    if (favoriteButton) {
+      toggleFavorite(favoriteButton.dataset.favorite);
     }
   });
+}
+
+function getRouteFromHash() {
+  return (location.hash || "#home").replace("#", "") || "home";
+}
+
+function navigateTo(route) {
+  if (route === "post") {
+    openPostTypeDialog();
+    route = "home";
+  }
+
+  const homeIds = ["home", "search", "rentals", "secondhand"];
+  const sectionMap = {
+    home: homeIds,
+    rentals: homeIds,
+    secondhand: homeIds,
+    favorites: ["favorites"],
+    messages: ["messages"],
+    account: ["account"],
+    "my-posts": ["my-posts"],
+    drafts: ["drafts"],
+    history: ["history"],
+    settings: ["settings"],
+    "post-form": ["post"],
+  };
+  const visible = sectionMap[route] || homeIds;
+
+  document.querySelectorAll("main > section").forEach((section) => {
+    section.hidden = !visible.includes(section.id);
+  });
+  document.body.dataset.page = visible[0] === "home" ? "home" : route;
+
+  document.querySelectorAll(".mobile-nav a, .desktop-nav a").forEach((link) => {
+    const linkRoute = link.getAttribute("href")?.replace("#", "");
+    link.classList.toggle("is-active", linkRoute === route || (route === "post-form" && linkRoute === "post"));
+  });
+
+  if (route === "rentals") document.querySelector("#rentals")?.scrollIntoView({ block: "start" });
+  if (route === "secondhand") document.querySelector("#secondhand")?.scrollIntoView({ block: "start" });
+}
+
+function openPostTypeDialog() {
+  if (!els.postTypeDialog.open) els.postTypeDialog.showModal();
+}
+
+function startPost(type, draft = null) {
+  editingListingId = draft?.id || null;
+  els.typeSelect.value = type;
+  updatePostTypeFields();
+  if (draft) fillPostForm(draft);
+  else {
+    els.postForm.reset();
+    els.typeSelect.value = type;
+    selectedImageFiles = [];
+    renderImagePreviews();
+    updatePostTypeFields();
+  }
+  if (els.postTypeDialog.open) els.postTypeDialog.close();
+  location.hash = "#post-form";
+  navigateTo("post-form");
 }
 
 function renderAreaOptions() {
@@ -344,6 +448,32 @@ function updatePostPreview() {
   `;
 }
 
+function fillPostForm(item) {
+  els.postForm.elements.type.value = item.type || "rental";
+  els.postForm.elements.area.value = areas.includes(item.area) ? item.area : "其他/自定义";
+  els.postForm.elements.customArea.value = areas.includes(item.area) ? "" : item.area || "";
+  els.postForm.elements.title.value = item.title || "";
+  els.postForm.elements.price.value = item.price || "";
+  updatePostTypeFields();
+  if (Array.from(els.categorySelect.options).some((option) => option.value === item.category)) {
+    els.postForm.elements.category.value = item.category;
+  }
+  els.postForm.elements.nearby.value = item.type === "rental" ? item.nearby || "" : "";
+  els.postForm.elements.address.value = item.type === "rental" ? item.address || "" : "";
+  els.postForm.elements.pickupLocation.value =
+    item.type === "secondhand" ? item.nearby || item.address || "" : "";
+  els.postForm.elements.moveIn.value = item.moveIn || "";
+  els.postForm.elements.condition.value = item.condition || extractCondition(item) || "";
+  els.postForm.elements.image.value = item.image || "";
+  els.postForm.elements.contact.value = item.contact || "";
+  els.postForm.elements.description.value = stripGeneratedDescription(item.description || "");
+  updatePostPreview();
+}
+
+function stripGeneratedDescription(description) {
+  return String(description).replace(/^【[^】]+】[^\n]*\n\n/, "");
+}
+
 async function loadCurrentUser() {
   if (!onlineMode) return;
   const { data } = await db.auth.getUser();
@@ -415,12 +545,36 @@ function render() {
   const approved = filterListings(listings.filter((item) => item.status === "approved"));
   renderCards(els.rentalList, approved.filter((item) => item.type === "rental"));
   renderCards(els.secondhandList, approved.filter((item) => item.type === "secondhand"));
-  renderFavorites(approved);
+  renderFavorites();
   renderMessages(approved);
   renderAdmin();
   renderAccount();
+  renderMyPosts();
+  renderDrafts();
+  renderHistory();
   renderUser();
   renderStats();
+}
+
+function loadLocalState() {
+  favoriteIds = readStoredArray(FAVORITES_KEY);
+  draftListings = readStoredArray(DRAFTS_KEY);
+  historyIds = readStoredArray(HISTORY_KEY);
+}
+
+function readStoredArray(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalState() {
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify(favoriteIds));
+  localStorage.setItem(DRAFTS_KEY, JSON.stringify(draftListings));
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(historyIds));
 }
 
 function filterListings(items) {
@@ -465,8 +619,10 @@ function renderCards(target, items) {
   });
 }
 
-function renderFavorites(approved) {
-  const savedItems = approved.slice(0, 3);
+function renderFavorites() {
+  const savedItems = favoriteIds
+    .map((id) => listings.find((item) => item.id === id && item.status === "approved"))
+    .filter(Boolean);
   if (!savedItems.length) {
     els.favoriteList.innerHTML = `
       <div class="empty">
@@ -481,16 +637,20 @@ function renderFavorites(approved) {
   els.favoriteList.querySelectorAll("[data-detail]").forEach((button) => {
     button.addEventListener("click", () => showDetail(button.dataset.detail));
   });
+  els.favoriteList.querySelectorAll("[data-unfavorite]").forEach((button) => {
+    button.addEventListener("click", () => toggleFavorite(button.dataset.unfavorite));
+  });
 }
 
 function savedItemTemplate(item) {
+  const isSaved = favoriteIds.includes(item.id);
   return `
     <article class="saved-item">
       <div class="saved-thumb">${imageTemplate(item)}</div>
       <div>
         <div class="saved-title">
           <strong>${escapeHtml(item.title)}</strong>
-          <span>♥</span>
+          <button class="heart-btn ${isSaved ? "is-saved" : ""}" type="button" data-unfavorite="${item.id}" aria-label="${isSaved ? "取消收藏" : "收藏"}">${isSaved ? "♥" : "♡"}</button>
         </div>
         <p>$${Number(item.price).toLocaleString()} · ${escapeHtml(item.area)} · ${timeAgo(item.updatedAt)}</p>
         <small>${item.type === "rental" ? "租房" : "二手"}</small>
@@ -598,6 +758,8 @@ function cardExtraMeta(item) {
 function showDetail(id) {
   const item = listings.find((entry) => entry.id === id);
   if (!item) return;
+  addHistory(id);
+  const isSaved = favoriteIds.includes(id);
   const rentalExtra =
     item.type === "rental"
       ? `
@@ -618,12 +780,30 @@ function showDetail(id) {
       ${rentalExtra}
       <p><strong>附近：</strong>${escapeHtml(item.nearby || "未填写")}</p>
       <p><strong>更新时间：</strong>${timeAgo(item.updatedAt)}</p>
+      <button class="favorite-detail-btn ${isSaved ? "is-saved" : ""}" type="button" data-favorite="${item.id}">
+        ${isSaved ? "已收藏 ♥" : "收藏 ♡"}
+      </button>
       <div class="safety-note">交易提醒：不要提前转账押金或定金；租房请尽量实地/视频看房，二手交易建议当面验货。</div>
       <p>${escapeHtml(item.description)}</p>
       ${contactTemplate(item)}
     </div>
   `;
-  els.detailDialog.showModal();
+  if (!els.detailDialog.open) els.detailDialog.showModal();
+}
+
+function toggleFavorite(id) {
+  favoriteIds = favoriteIds.includes(id)
+    ? favoriteIds.filter((savedId) => savedId !== id)
+    : [id, ...favoriteIds];
+  saveLocalState();
+  render();
+  const item = listings.find((entry) => entry.id === id);
+  if (item && els.detailDialog.open) showDetail(id);
+}
+
+function addHistory(id) {
+  historyIds = [id, ...historyIds.filter((historyId) => historyId !== id)].slice(0, 30);
+  saveLocalState();
 }
 
 function imageTemplate(item) {
@@ -800,7 +980,7 @@ async function handleLoginButton() {
 
 async function handlePostSubmit(event) {
   event.preventDefault();
-  if (!currentUser) {
+  if (onlineMode && !currentUser) {
     els.loginDialog.showModal();
     return;
   }
@@ -808,13 +988,25 @@ async function handlePostSubmit(event) {
   const formData = new FormData(els.postForm);
   const listing = listingFromForm(formData);
 
-  if (onlineMode) {
+  const existingListing = editingListingId
+    ? listings.find((item) => item.id === editingListingId)
+    : null;
+
+  if (editingListingId && existingListing) {
+    await updateOwnListing(editingListingId, listing);
+    editingListingId = null;
+    alert("已更新帖子。");
+  } else if (onlineMode) {
     const { data, error } = await db.from("listings").insert(toDbListing(listing)).select("id").single();
     if (error) {
       alert(`发布失败：${error.message}`);
       return;
     }
     listing.id = data.id;
+    if (editingListingId) {
+      draftListings = draftListings.filter((item) => item.id !== editingListingId);
+      saveLocalState();
+    }
 
     const uploadedImages = await uploadListingImages(selectedImageFiles, listing.id);
     if (uploadedImages.length) {
@@ -827,17 +1019,74 @@ async function handlePostSubmit(event) {
     alert("已提交，等待管理员审核。");
     await loadListings();
   } else {
+    listing.status = "approved";
+    if (editingListingId) {
+      listing.id = editingListingId;
+      draftListings = draftListings.filter((item) => item.id !== editingListingId);
+    }
     listing.images = selectedImageFiles.map((file) => URL.createObjectURL(file));
     listings.unshift(listing);
     saveFallbackListings(listings);
+    saveLocalState();
+    alert("发布成功。");
   }
 
   els.postForm.reset();
   selectedImageFiles = [];
+  editingListingId = null;
   renderImagePreviews();
   updatePostTypeFields();
   render();
-  location.hash = "#account";
+  location.hash = "#my-posts";
+  navigateTo("my-posts");
+}
+
+async function updateOwnListing(id, listing) {
+  const existing = listings.find((item) => item.id === id);
+  if (!existing) return;
+  const next = {
+    ...existing,
+    ...listing,
+    id,
+    userId: existing.userId,
+    status: existing.status === "draft" ? "approved" : existing.status,
+    images: selectedImageFiles.length ? selectedImageFiles.map((file) => URL.createObjectURL(file)) : existing.images,
+    image: listing.image || existing.image,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (onlineMode && currentUser && existing.userId === currentUser.id) {
+    const { error } = await db.from("listings").update(toDbListing(next)).eq("id", id).eq("user_id", currentUser.id);
+    if (error) {
+      alert(`更新失败：${error.message}`);
+      return;
+    }
+    await loadListings();
+  } else {
+    listings = listings.map((item) => (item.id === id ? next : item));
+    saveFallbackListings(listings);
+  }
+}
+
+function saveDraftFromForm() {
+  const data = new FormData(els.postForm);
+  const draft = {
+    ...listingFromForm(data),
+    id: editingListingId || createId(),
+    status: "draft",
+    images: selectedImageFiles.map((file) => URL.createObjectURL(file)),
+    image: data.get("image").trim(),
+  };
+  draftListings = [draft, ...draftListings.filter((item) => item.id !== draft.id)];
+  saveLocalState();
+  els.postForm.reset();
+  selectedImageFiles = [];
+  editingListingId = null;
+  renderImagePreviews();
+  updatePostTypeFields();
+  render();
+  location.hash = "#drafts";
+  navigateTo("drafts");
 }
 
 async function uploadListingImages(files, listingId) {
@@ -900,15 +1149,16 @@ function listingFromForm(data) {
   const type = data.get("type");
   const baseDescription = data.get("description").trim();
   const enrichedDescription = buildEnrichedDescription(type, data, baseDescription);
+  const fallbackTitle = baseDescription.slice(0, 24) || (type === "rental" ? "房屋出租" : "二手物品");
   const now = new Date().toISOString();
   return {
     id: createId(),
-    userId: currentUser.id,
+    userId: getActiveUserId(),
     type,
     status: "pending",
-    title: data.get("title").trim(),
+    title: data.get("title").trim() || fallbackTitle,
     area,
-    price: Number(data.get("price")),
+    price: Number(data.get("price")) || 0,
     category: data.get("category").trim(),
     moveIn: data.get("moveIn") || null,
     nearby: type === "rental" ? data.get("nearby").trim() : data.get("pickupLocation").trim(),
@@ -919,15 +1169,19 @@ function listingFromForm(data) {
     lat: parsedCoords?.lat ?? areaCoord.lat,
     lng: parsedCoords?.lng ?? areaCoord.lng,
     image: data.get("image").trim(),
-    contact: data.get("contact").trim(),
+    contact: data.get("contact").trim() || "未填写",
     description: enrichedDescription,
     condition: data.get("condition") || "",
     deliveryAvailable: Boolean(data.get("deliveryAvailable")),
     furnished: Boolean(data.get("furnished")),
-    userName: currentProfile?.display_name || currentUser.email,
+    userName: currentProfile?.display_name || currentUser?.email || "演示用户",
     createdAt: now,
     updatedAt: now,
   };
+}
+
+function getActiveUserId() {
+  return currentUser?.id || "demo-user";
 }
 
 function buildEnrichedDescription(type, data, baseDescription) {
@@ -1031,7 +1285,7 @@ function renderAccount() {
     els.profileName.textContent = "Barry";
     els.accountList.innerHTML = `
       <div class="empty">
-        登录后可以查看你发布过的房源和二手信息。
+        登录后可以同步管理你的发布。演示模式下也可以先体验发布、草稿、收藏和浏览历史。
         <button class="primary-btn inline-action" type="button" onclick="document.querySelector('#loginDialog').showModal()">现在登录</button>
       </div>
     `;
@@ -1040,13 +1294,17 @@ function renderAccount() {
 
   els.accountStatus.textContent = currentUser.email;
   els.profileName.textContent = currentProfile?.display_name || currentUser.email.split("@")[0];
-  const mine = listings.filter((item) => item.userId === currentUser.id);
+  els.accountList.innerHTML = `<div class="empty">从上方入口进入我的发布、草稿、收藏、浏览历史和设置。</div>`;
+}
+
+function renderMyPosts() {
+  const mine = listings.filter((item) => item.userId === getActiveUserId());
   if (!mine.length) {
-    els.accountList.innerHTML = `<div class="empty">你还没有发布内容。可以先发布一条租房或二手信息。</div>`;
+    els.myPostList.innerHTML = `<div class="empty">你还没有发布内容。可以先发布一条租房或二手信息。</div>`;
     return;
   }
 
-  els.accountList.innerHTML = mine
+  els.myPostList.innerHTML = mine
     .map(
       (item) => `
         <div class="admin-item">
@@ -1063,20 +1321,110 @@ function renderAccount() {
             </div>
           </div>
           <div class="admin-actions">
-            <button class="approve-btn" type="button" data-renew="${item.id}">刷新</button>
-            <button class="reject-btn" type="button" data-expire="${item.id}">下架</button>
+            <button class="secondary-btn" type="button" data-detail="${item.id}">查看</button>
+            <button class="approve-btn" type="button" data-edit="${item.id}">编辑</button>
+            <button class="reject-btn" type="button" data-delete="${item.id}">删除</button>
           </div>
         </div>
       `
     )
     .join("");
 
-  els.accountList.querySelectorAll("[data-renew]").forEach((button) => {
-    button.addEventListener("click", () => updateListingStatus(button.dataset.renew, "pending"));
+  els.myPostList.querySelectorAll("[data-detail]").forEach((button) => {
+    button.addEventListener("click", () => showDetail(button.dataset.detail));
   });
-  els.accountList.querySelectorAll("[data-expire]").forEach((button) => {
-    button.addEventListener("click", () => updateListingStatus(button.dataset.expire, "expired"));
+  els.myPostList.querySelectorAll("[data-edit]").forEach((button) => {
+    button.addEventListener("click", () => editListing(button.dataset.edit));
   });
+  els.myPostList.querySelectorAll("[data-delete]").forEach((button) => {
+    button.addEventListener("click", () => deleteListing(button.dataset.delete));
+  });
+}
+
+function renderDrafts() {
+  if (!draftListings.length) {
+    els.draftList.innerHTML = `<div class="empty">还没有草稿。发布信息时点“保存草稿”，会出现在这里。</div>`;
+    return;
+  }
+
+  els.draftList.innerHTML = draftListings
+    .map(
+      (item) => `
+        <div class="admin-item">
+          <div>
+            <strong>${escapeHtml(item.title || "未命名草稿")}</strong>
+            <div class="meta">
+              <span>${item.type === "rental" ? "租房" : "二手"}</span>
+              <span>·</span>
+              <span>${escapeHtml(item.area || "未填写地区")}</span>
+              <span>·</span>
+              <span>草稿</span>
+            </div>
+          </div>
+          <div class="admin-actions">
+            <button class="approve-btn" type="button" data-edit-draft="${item.id}">继续编辑</button>
+            <button class="reject-btn" type="button" data-delete-draft="${item.id}">删除</button>
+          </div>
+        </div>
+      `
+    )
+    .join("");
+
+  els.draftList.querySelectorAll("[data-edit-draft]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const draft = draftListings.find((item) => item.id === button.dataset.editDraft);
+      if (draft) startPost(draft.type, draft);
+    });
+  });
+  els.draftList.querySelectorAll("[data-delete-draft]").forEach((button) => {
+    button.addEventListener("click", () => {
+      draftListings = draftListings.filter((item) => item.id !== button.dataset.deleteDraft);
+      saveLocalState();
+      render();
+    });
+  });
+}
+
+function renderHistory() {
+  const historyItems = historyIds
+    .map((id) => listings.find((item) => item.id === id))
+    .filter(Boolean);
+  if (!historyItems.length) {
+    els.historyList.innerHTML = `<div class="empty">还没有浏览历史。打开帖子详情后会自动记录到这里。</div>`;
+    return;
+  }
+  els.historyList.innerHTML = historyItems.map(savedItemTemplate).join("");
+  els.historyList.querySelectorAll("[data-detail]").forEach((button) => {
+    button.addEventListener("click", () => showDetail(button.dataset.detail));
+  });
+  els.historyList.querySelectorAll("[data-unfavorite]").forEach((button) => {
+    button.addEventListener("click", () => toggleFavorite(button.dataset.unfavorite));
+  });
+}
+
+function editListing(id) {
+  const item = listings.find((entry) => entry.id === id);
+  if (!item) return;
+  startPost(item.type, item);
+}
+
+async function deleteListing(id) {
+  if (!confirm("确定删除这条帖子吗？")) return;
+  if (onlineMode && currentUser) {
+    const { error } = await db.from("listings").delete().eq("id", id).eq("user_id", currentUser.id);
+    if (error) {
+      alert(`删除失败：${error.message}`);
+      return;
+    }
+    await loadListings();
+  } else {
+    listings = listings.filter((item) => item.id !== id);
+    favoriteIds = favoriteIds.filter((savedId) => savedId !== id);
+    historyIds = historyIds.filter((historyId) => historyId !== id);
+    saveFallbackListings(listings);
+    saveLocalState();
+  }
+  render();
 }
 
 async function updateListingStatus(id, status) {
@@ -1302,6 +1650,7 @@ function statusLabel(status) {
       approved: "已发布",
       rejected: "未通过",
       expired: "已下架",
+      draft: "草稿",
     }[status] || status
   );
 }

@@ -20,7 +20,7 @@
         <a href="#rentals">找租房</a>
         <a href="#secondhand">看二手</a>
         <a href="#favorites">收藏</a>
-        <a href="#post">发布</a>
+        <a href="#post" data-open-post>发布</a>
         <a href="#messages">消息</a>
         <a href="#account">我的</a>
       </nav>
@@ -44,7 +44,7 @@
           <div class="hero-actions">
             <a class="primary-btn" href="#rentals">找租房</a>
             <a class="secondary-btn" href="#secondhand">看二手</a>
-            <a class="secondary-btn" href="#post">免费发布</a>
+            <a class="secondary-btn" href="#post" data-open-post>免费发布</a>
           </div>
         </div>
         <div class="hero-panel" aria-label="平台数据概览">
@@ -63,7 +63,7 @@
         </div>
       </section>
 
-      <section class="section category-section" aria-label="快捷分类">
+      <section class="section category-section" id="category" aria-label="快捷分类">
         <div class="category-grid">
           <a class="category-tile" href="#rentals" data-post-type="rental">
             <span class="cat-icon cat-orange">租</span>
@@ -76,7 +76,7 @@
         </div>
       </section>
 
-      <section class="section search-band">
+      <section class="section search-band" id="search">
         <div>
           <p class="eyebrow">Search</p>
           <h2>按地区和条件筛选</h2>
@@ -144,7 +144,7 @@
         <div class="listing-grid" id="secondhandList"></div>
       </section>
 
-      <section class="section post-section" id="post">
+      <section class="section post-section" id="post" hidden>
         <div class="section-heading">
           <div>
             <p class="eyebrow">Post</p>
@@ -153,35 +153,28 @@
           <span class="pill">先选分类，再填写信息</span>
         </div>
 
-        <div class="post-type-grid" aria-label="选择发布类型">
-          <a class="post-type-card" href="#postForm" data-post-type="rental">
-            <span>房</span>
-            <strong>房屋出租</strong>
-            <small>出租房、公寓、合租</small>
-          </a>
-          <a class="post-type-card" href="#postForm" data-post-type="secondhand">
-            <span>物</span>
-            <strong>二手物品</strong>
-            <small>家具、电器、电子产品</small>
-          </a>
-        </div>
-
         <form class="post-form" id="postForm">
           <div class="post-steps" aria-label="发布步骤">
-            <span class="is-active">1 选择类型</span>
-            <span>2 填写信息</span>
-            <span>3 上传图片</span>
-            <span>4 联系方式</span>
+            <span class="is-active">1 上传图片</span>
+            <span>2 添加描述</span>
+            <span>3 保存或发布</span>
           </div>
 
+          <input name="type" id="typeSelect" type="hidden" value="rental" />
+          <label>
+            上传图片，最多 6 张
+            <input name="imageFile" id="imageFileInput" type="file" accept="image/*" multiple />
+          </label>
+          <div class="image-preview-grid" id="imagePreviewGrid"></div>
+          <label>
+            图片链接备用
+            <input name="image" type="url" placeholder="可选：如果暂时不上传图片，也可以粘贴图片网址" />
+          </label>
+          <label>
+            描述
+            <textarea name="description" rows="5" required placeholder="写清楚图片里的房源或物品信息、位置、取货/看房方式。"></textarea>
+          </label>
           <div class="form-row">
-            <label>
-              类型
-              <select name="type" id="typeSelect" required>
-                <option value="rental">租房/转租</option>
-                <option value="secondhand">二手/清仓</option>
-              </select>
-            </label>
             <label>
               地区
               <select name="area" required></select>
@@ -193,12 +186,12 @@
           </label>
           <label>
             标题
-            <input name="title" maxlength="60" required placeholder="例如 Rockville 主卧转租，近红线地铁" />
+            <input name="title" maxlength="60" placeholder="可选，例如 Rockville 主卧转租，近红线地铁" />
           </label>
           <div class="form-row">
             <label>
               价格
-              <input name="price" type="number" min="0" required placeholder="租金或售价" />
+              <input name="price" type="number" min="0" placeholder="可选，租金或售价" />
             </label>
             <label>
               分类/房型
@@ -283,28 +276,18 @@
             </label>
           </div>
           <label>
-            上传图片，最多 6 张
-            <input name="imageFile" id="imageFileInput" type="file" accept="image/*" multiple />
-          </label>
-          <div class="image-preview-grid" id="imagePreviewGrid"></div>
-          <label>
-            图片链接备用
-            <input name="image" type="url" placeholder="可选：如果暂时不上传图片，也可以粘贴图片网址" />
-          </label>
-          <label>
             联系方式
-            <input name="contact" required placeholder="微信 / 手机 / 邮箱" />
-          </label>
-          <label>
-            描述
-            <textarea name="description" rows="5" required placeholder="租房请写清交通、室友、看房方式；二手请写清尺寸、状态、取货方式。"></textarea>
+            <input name="contact" placeholder="可选，微信 / 手机 / 邮箱" />
           </label>
           <div class="post-preview" id="postPreview"></div>
-          <button class="primary-btn" type="submit">提交发布</button>
+          <div class="post-submit-bar">
+            <button class="secondary-btn" id="saveDraftButton" type="button">保存草稿</button>
+            <button class="primary-btn" type="submit">发布</button>
+          </div>
         </form>
       </section>
 
-      <section class="section admin-section" id="admin">
+      <section class="section admin-section" id="admin" hidden>
         <div class="section-heading">
           <div>
             <p class="eyebrow">Admin</p>
@@ -315,7 +298,7 @@
         <div class="admin-list" id="adminList"></div>
       </section>
 
-      <section class="section favorites-section" id="favorites">
+      <section class="section favorites-section" id="favorites" hidden>
         <div class="section-heading">
           <div>
             <p class="eyebrow">Saved</p>
@@ -331,7 +314,7 @@
         <div class="saved-list" id="favoriteList"></div>
       </section>
 
-      <section class="section messages-section" id="messages">
+      <section class="section messages-section" id="messages" hidden>
         <div class="section-heading">
           <div>
             <p class="eyebrow">Messages</p>
@@ -348,7 +331,7 @@
         <div class="message-list" id="messageList"></div>
       </section>
 
-      <section class="section account-section" id="account">
+      <section class="section account-section" id="account" hidden>
         <div class="section-heading">
           <div>
             <p class="eyebrow">Profile</p>
@@ -364,16 +347,55 @@
           </div>
         </div>
         <div class="profile-menu" aria-label="我的菜单">
-          <a href="#account">我的发布 <span>›</span></a>
-          <a href="#post">草稿 <span>›</span></a>
+          <a href="#my-posts">我的发布 <span>›</span></a>
+          <a href="#drafts">草稿 <span>›</span></a>
           <a href="#favorites">我的收藏 <span>›</span></a>
-          <a href="#home">浏览历史 <span>›</span></a>
-          <a href="#account">我的订单 <span>›</span></a>
+          <a href="#history">浏览历史 <span>›</span></a>
           <a href="#account">意见反馈 <span>›</span></a>
           <a href="#account">帮助中心 <span>›</span></a>
-          <a href="#account">设置 <span>›</span></a>
+          <a href="#settings">设置 <span>›</span></a>
         </div>
         <div class="admin-list" id="accountList"></div>
+      </section>
+
+      <section class="section subpage-section" id="my-posts" hidden>
+        <div class="subpage-heading">
+          <a href="#account" aria-label="返回">←</a>
+          <h2>我的发布</h2>
+        </div>
+        <div class="admin-list" id="myPostList"></div>
+      </section>
+
+      <section class="section subpage-section" id="drafts" hidden>
+        <div class="subpage-heading">
+          <a href="#account" aria-label="返回">←</a>
+          <h2>草稿</h2>
+        </div>
+        <div class="admin-list" id="draftList"></div>
+      </section>
+
+      <section class="section subpage-section" id="history" hidden>
+        <div class="subpage-heading">
+          <a href="#account" aria-label="返回">←</a>
+          <h2>浏览历史</h2>
+        </div>
+        <div class="saved-list" id="historyList"></div>
+      </section>
+
+      <section class="section subpage-section" id="settings" hidden>
+        <div class="subpage-heading">
+          <a href="#account" aria-label="返回">←</a>
+          <h2>设置</h2>
+        </div>
+        <div class="settings-menu">
+          <a href="#settings">编辑个人资料 <span>›</span></a>
+          <a href="#settings">Language <span>›</span></a>
+          <a href="#settings">深色模式 <span>›</span></a>
+          <a href="#settings">用户协议 <span>›</span></a>
+          <a href="#settings">隐私政策 <span>›</span></a>
+          <a href="#settings">关于我们 <span>›</span></a>
+          <button id="logoutButton" type="button">退出登录</button>
+        </div>
       </section>
     </main>
 
@@ -408,10 +430,28 @@
       </form>
     </dialog>
 
+    <dialog class="post-type-dialog" id="postTypeDialog">
+      <button class="close-btn" id="closePostTypeDialog" type="button" aria-label="关闭">×</button>
+      <div class="post-type-sheet">
+        <h2>发布信息</h2>
+        <p>选择你要发布的内容</p>
+        <button class="post-type-card" type="button" data-post-type-choice="rental">
+          <span>房</span>
+          <strong>房屋出租</strong>
+          <small>出租房、公寓、合租</small>
+        </button>
+        <button class="post-type-card" type="button" data-post-type-choice="secondhand">
+          <span>物</span>
+          <strong>二手物品</strong>
+          <small>家具、电器、电子产品</small>
+        </button>
+      </div>
+    </dialog>
+
     <nav class="mobile-nav" aria-label="底部导航">
       <a href="#home">首页</a>
       <a href="#favorites">收藏</a>
-      <a href="#post">发布</a>
+      <a href="#post" data-open-post>发布</a>
       <a href="#messages">消息</a>
       <a href="#account">我的</a>
     </nav>
