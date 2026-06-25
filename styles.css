@@ -268,6 +268,7 @@ textarea {
   border-radius: 8px;
   background: #fff;
   color: var(--text);
+  font-size: 16px;
   padding: 12px 13px;
   outline: none;
 }
@@ -319,6 +320,20 @@ input[type="file"]::file-selector-button {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.listing-card:hover,
+.listing-card:focus-visible {
+  border-color: rgba(22, 119, 255, 0.4);
+  box-shadow: 0 14px 34px rgba(21, 34, 56, 0.12);
+  transform: translateY(-1px);
 }
 
 .listing-image {
@@ -1072,6 +1087,251 @@ textarea {
     font-size: 13px;
     font-weight: 800;
     text-align: center;
+  }
+}
+
+.listing-card .card-actions {
+  justify-content: flex-end;
+}
+
+.listing-card .card-actions button,
+.listing-card .card-actions button:first-child {
+  flex: 0 0 auto;
+  min-height: 34px;
+  background: #fff;
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.listing-card .card-actions button:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.detail-inner p:has(strong) {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 10px 12px;
+}
+
+.detail-inner p:has(strong) strong {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 860px) {
+  .listing-card .card-actions button:last-child {
+    display: inline-flex;
+  }
+}
+
+
+
+/* High-priority UI review refinements */
+.hero-copy p {
+  color: #526276;
+}
+
+.category-tile small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.filter-chips {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-chips span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8fbff;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 7px 11px;
+}
+
+.favorites-section .icon-btn,
+.messages-section .icon-btn {
+  display: none;
+}
+
+.form-section-title {
+  display: grid;
+  gap: 3px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.form-section-title:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.form-section-title strong {
+  color: var(--text);
+  font-size: 17px;
+}
+
+.form-section-title span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.optional-title {
+  margin-top: 6px;
+}
+
+@media (max-width: 860px) {
+  .app-home .hero-copy .eyebrow,
+  .app-home .hero-copy h1,
+  .app-home .hero-copy p {
+    display: block;
+  }
+
+  .app-home .hero-copy h1 {
+    font-size: 25px;
+    line-height: 1.16;
+    margin: 6px 0;
+  }
+
+  .app-home .hero-copy p {
+    font-size: 14px;
+    line-height: 1.45;
+    margin: 0;
+  }
+
+  .app-location {
+    margin-bottom: 8px;
+  }
+
+  .listing-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .listing-card {
+    display: grid;
+    grid-template-columns: 128px minmax(0, 1fr);
+    min-height: 132px;
+  }
+
+  .listing-image img,
+  .image-fallback {
+    height: 100%;
+    min-height: 132px;
+    aspect-ratio: auto;
+  }
+
+  .listing-body {
+    min-width: 0;
+    padding: 12px;
+  }
+
+  .listing-body h3 {
+    font-size: 16px;
+    line-height: 1.35;
+  }
+
+  .price {
+    font-size: 18px;
+  }
+
+  .desc {
+    -webkit-line-clamp: 2;
+  }
+
+  body[data-page="rentals"] .filters,
+  body[data-page="secondhand"] .filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body[data-page="rentals"] .filters label,
+  body[data-page="secondhand"] .filters label {
+    display: none;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  body[data-page="rentals"] .filters label:first-child,
+  body[data-page="rentals"] .filters label:nth-child(2),
+  body[data-page="rentals"] .filters label:nth-child(4),
+  body[data-page="rentals"] .filters label:nth-child(6),
+  body[data-page="secondhand"] .filters label:first-child,
+  body[data-page="secondhand"] .filters label:nth-child(2),
+  body[data-page="secondhand"] .filters label:nth-child(4) {
+    display: grid;
+  }
+
+  body[data-page="rentals"] .filters label:first-child,
+  body[data-page="secondhand"] .filters label:first-child {
+    grid-column: 1 / -1;
+  }
+
+  body[data-page="rentals"] .filters::after,
+  body[data-page="secondhand"] .filters::after {
+    display: none;
+  }
+
+  body[data-page="rentals"] .filter-chips,
+  body[data-page="secondhand"] .filter-chips {
+    display: flex;
+  }
+
+  body[data-page="home"] .filter-chips {
+    display: none;
+  }
+
+  .post-section {
+    padding: 18px;
+  }
+
+  .post-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .post-steps span {
+    font-size: 12px;
+    padding: 8px 6px;
+  }
+
+  .detail-dialog {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    border-radius: 0;
+  }
+
+  .detail-inner {
+    min-height: 100%;
+    padding: 18px 16px 92px;
+  }
+
+  .detail-gallery {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-inner img {
+    max-height: 52vh;
+  }
+
+  .detail-dialog .close-btn {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 2;
   }
 }
 
@@ -2132,5 +2392,151 @@ main {
 
   .saved-actions {
     flex-wrap: wrap;
+  }
+}
+
+/* Final interaction overrides for full-card listing taps. */
+.listing-card {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.saved-item {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.listing-card .card-actions {
+  justify-content: flex-end;
+}
+
+.listing-card .card-actions button,
+.listing-card .card-actions button:first-child {
+  flex: 0 0 auto;
+  min-height: 34px;
+  background: #fff;
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.listing-card .card-actions button:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+@media (max-width: 860px) {
+  .listing-card .card-actions button:last-child {
+    display: inline-flex;
+  }
+}
+
+/* Final high-priority mobile overrides. */
+body[data-page="home"] .app-home .hero-actions {
+  display: flex;
+}
+
+body:not([data-page="home"]) .app-home {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  body[data-page="home"] .app-home .hero-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .app-home .hero-copy .eyebrow,
+  .app-home .hero-copy h1,
+  .app-home .hero-copy p {
+    display: block;
+  }
+
+  .app-home .hero-copy h1 {
+    font-size: 25px;
+    line-height: 1.16;
+    margin: 6px 0;
+  }
+
+  .app-home .hero-copy p {
+    font-size: 14px;
+    line-height: 1.45;
+    margin: 0;
+  }
+
+  .listing-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .listing-card {
+    display: grid;
+    grid-template-columns: 128px minmax(0, 1fr);
+    min-height: 132px;
+  }
+
+  .listing-image img,
+  .image-fallback {
+    height: 100%;
+    min-height: 132px;
+    aspect-ratio: auto;
+  }
+
+  body[data-page="rentals"] .filters,
+  body[data-page="secondhand"] .filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body[data-page="rentals"] .filters label,
+  body[data-page="secondhand"] .filters label {
+    display: none;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  body[data-page="rentals"] .filters label:first-child,
+  body[data-page="rentals"] .filters label:nth-child(2),
+  body[data-page="rentals"] .filters label:nth-child(4),
+  body[data-page="rentals"] .filters label:nth-child(6),
+  body[data-page="secondhand"] .filters label:first-child,
+  body[data-page="secondhand"] .filters label:nth-child(2),
+  body[data-page="secondhand"] .filters label:nth-child(4) {
+    display: grid;
+  }
+
+  body[data-page="rentals"] .filters label:first-child,
+  body[data-page="secondhand"] .filters label:first-child {
+    grid-column: 1 / -1;
+  }
+
+  body[data-page="rentals"] .filters::after,
+  body[data-page="secondhand"] .filters::after {
+    display: none;
+  }
+
+  body[data-page="home"] .filter-chips {
+    display: none;
+  }
+
+  .detail-dialog {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    border-radius: 0;
+  }
+
+  .detail-inner {
+    min-height: 100%;
+    padding: 18px 16px 92px;
+  }
+
+  .detail-dialog .close-btn {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 2;
   }
 }

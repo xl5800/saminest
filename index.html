@@ -2,7 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>DMV华人集市 - 租房二手</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -39,8 +39,8 @@
             <span>租房</span>
           </div>
           <p class="eyebrow">DMV LOCAL MARKET</p>
-          <h1>租房和二手，本地华人生活信息。</h1>
-          <p>先做好两个核心功能：找房源、看二手。其他服务等功能成熟后再开放。</p>
+          <h1>DMV 华人租房和二手信息。</h1>
+          <p>面向 Rockville、College Park、Tysons、Arlington 等周边华人社区，快速找房源、看二手、发布搬家清仓。</p>
           <div class="hero-actions">
             <a class="primary-btn" href="#rentals">找租房</a>
             <a class="secondary-btn" href="#secondhand">看二手</a>
@@ -68,10 +68,12 @@
           <a class="category-tile" href="#rentals" data-post-type="rental">
             <span class="cat-icon cat-orange">租</span>
             <strong>租房</strong>
+            <small>房源 / 转租 / 找室友</small>
           </a>
           <a class="category-tile" href="#secondhand">
             <span class="cat-icon cat-blue">二</span>
             <strong>二手</strong>
+            <small>家具 / 电器 / 搬家清仓</small>
           </a>
         </div>
       </section>
@@ -80,7 +82,7 @@
         <div>
           <p class="eyebrow">Search</p>
           <h2>按地区和条件筛选</h2>
-          <p class="search-note">先选地区，也可以输入小区、学校、地铁站或邮编。</p>
+          <p class="search-note">先按地区、价格、距离缩小范围，也可以输入小区、学校、地铁站或邮编。</p>
         </div>
         <div class="filters">
           <label>
@@ -118,6 +120,12 @@
           <div class="location-actions">
             <button class="secondary-btn" id="useLocationButton" type="button">使用当前位置</button>
             <small id="locationStatus">距离筛选仅用于租房。</small>
+          </div>
+          <div class="filter-chips" aria-label="常用筛选">
+            <span>Rockville</span>
+            <span>UMD</span>
+            <span>Tysons</span>
+            <span>$1500 内</span>
           </div>
         </div>
       </section>
@@ -161,6 +169,10 @@
           </div>
 
           <input name="type" id="typeSelect" type="hidden" value="rental" />
+          <div class="form-section-title">
+            <strong>核心信息</strong>
+            <span>先完成图片、描述、地区、分类和联系方式，其他信息可按需要补充。</span>
+          </div>
           <label>
             上传图片，最多 6 张
             <input name="imageFile" id="imageFileInput" type="file" accept="image/*" multiple />
@@ -197,6 +209,10 @@
               分类/房型
               <select name="category" id="categorySelect" required></select>
             </label>
+          </div>
+          <div class="form-section-title optional-title">
+            <strong>补充信息</strong>
+            <span>押金、租期、取货方式等不是第一步必须，但会提升成交效率。</span>
           </div>
           <div class="form-row rental-only">
             <label>
@@ -279,6 +295,10 @@
             联系方式
             <input name="contact" placeholder="可选，微信 / 手机 / 邮箱" />
           </label>
+          <div class="form-section-title optional-title">
+            <strong>发布预览</strong>
+            <span>确认卡片展示信息，提交后会进入审核。</span>
+          </div>
           <div class="post-preview" id="postPreview"></div>
           <div class="post-submit-bar">
             <button class="secondary-btn" id="saveDraftButton" type="button">保存草稿</button>
@@ -317,8 +337,8 @@
       <section class="section messages-section" id="messages" hidden>
         <div class="section-heading">
           <div>
-            <p class="eyebrow">Messages</p>
-            <h2>消息</h2>
+            <p class="eyebrow">Inbox</p>
+            <h2>咨询记录与通知</h2>
           </div>
           <button class="icon-btn" type="button" aria-label="搜索消息">⌕</button>
         </div>

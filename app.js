@@ -183,6 +183,7 @@ let editingListingId = null;
 init();
 
 async function init() {
+  preventPageZoom();
   setupSupabase();
   renderAreaOptions();
   updatePostTypeFields();
@@ -194,6 +195,18 @@ async function init() {
   loadLocalState();
   render();
   navigateTo(getRouteFromHash());
+}
+
+function preventPageZoom() {
+  document.addEventListener("gesturestart", (event) => event.preventDefault());
+  document.addEventListener("gesturechange", (event) => event.preventDefault());
+  document.addEventListener(
+    "touchmove",
+    (event) => {
+      if (event.touches.length > 1) event.preventDefault();
+    },
+    { passive: false }
+  );
 }
 
 function setupSupabase() {
@@ -288,11 +301,13 @@ function navigateTo(route) {
     route = "home";
   }
 
-  const homeIds = ["home", "search", "rentals", "secondhand"];
+  const homeIds = ["home", "category", "search", "rentals", "secondhand"];
+  const rentalsIds = ["category", "search", "rentals"];
+  const secondhandIds = ["category", "search", "secondhand"];
   const sectionMap = {
     home: homeIds,
-    rentals: homeIds,
-    secondhand: homeIds,
+    rentals: rentalsIds,
+    secondhand: secondhandIds,
     favorites: ["favorites"],
     messages: ["messages"],
     account: ["account"],
@@ -307,7 +322,7 @@ function navigateTo(route) {
   document.querySelectorAll("main > section").forEach((section) => {
     section.hidden = !visible.includes(section.id);
   });
-  document.body.dataset.page = visible[0] === "home" ? "home" : route;
+  document.body.dataset.page = route;
 
   document.querySelectorAll(".mobile-nav a, .desktop-nav a").forEach((link) => {
     const linkRoute = link.getAttribute("href")?.replace("#", "");
@@ -611,11 +626,20 @@ function renderCards(target, items) {
   }
 
   target.innerHTML = items.map(cardTemplate).join("");
-  target.querySelectorAll("[data-detail]").forEach((button) => {
-    button.addEventListener("click", () => showDetail(button.dataset.detail));
+  target.querySelectorAll("[data-card-detail]").forEach((card) => {
+    card.addEventListener("click", () => showDetail(card.dataset.cardDetail));
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        showDetail(card.dataset.cardDetail);
+      }
+    });
   });
   target.querySelectorAll("[data-report]").forEach((button) => {
-    button.addEventListener("click", () => reportListing(button.dataset.report));
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      reportListing(button.dataset.report);
+    });
   });
 }
 
@@ -634,18 +658,30 @@ function renderFavorites() {
   }
 
   els.favoriteList.innerHTML = savedItems.map(savedItemTemplate).join("");
-  els.favoriteList.querySelectorAll("[data-detail]").forEach((button) => {
-    button.addEventListener("click", () => showDetail(button.dataset.detail));
+  els.favoriteList.querySelectorAll("[data-saved-detail]").forEach((item) => {
+    item.addEventListener("click", (event) => {
+      if (event.target.closest("button, a")) return;
+      showDetail(item.dataset.savedDetail);
+    });
+    item.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        showDetail(item.dataset.savedDetail);
+      }
+    });
   });
   els.favoriteList.querySelectorAll("[data-unfavorite]").forEach((button) => {
-    button.addEventListener("click", () => toggleFavorite(button.dataset.unfavorite));
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleFavorite(button.dataset.unfavorite);
+    });
   });
 }
 
 function savedItemTemplate(item) {
   const isSaved = favoriteIds.includes(item.id);
   return `
-    <article class="saved-item">
+    <article class="saved-item" data-saved-detail="${item.id}" role="button" tabindex="0" aria-label="查看 ${escapeHtml(item.title)}">
       <div class="saved-thumb">${imageTemplate(item)}</div>
       <div>
         <div class="saved-title">
@@ -655,7 +691,6 @@ function savedItemTemplate(item) {
         <p>$${Number(item.price).toLocaleString()} · ${escapeHtml(item.area)} · ${timeAgo(item.updatedAt)}</p>
         <small>${item.type === "rental" ? "租房" : "二手"}</small>
         <div class="saved-actions">
-          <button type="button" data-detail="${item.id}">查看详情</button>
           <a href="#messages">联系对方</a>
         </div>
       </div>
@@ -688,7 +723,7 @@ function renderMessages(approved) {
     {
       image: "",
       title: "系统通知",
-      body: "发布内容提交后会进入审核，通过后显示在列表中。",
+      body: "发布内容提交后会进入审核，通过后显示在列表中；可在“我的发布”查看状态。",
       time: "今天",
       tag: "通知",
     },
@@ -717,7 +752,7 @@ function cardTemplate(item) {
   const label = item.type === "rental" ? "租房" : "二手";
   const distance = getDistanceLabel(item);
   return `
-    <article class="listing-card">
+    <article class="listing-card" data-card-detail="${item.id}" role="button" tabindex="0" aria-label="查看 ${escapeHtml(item.title)}">
       <div class="listing-image">
         ${imageTemplate(item)}
         <span class="status-badge">${label}</span>
@@ -735,7 +770,6 @@ function cardTemplate(item) {
         </div>
         <p class="desc">${escapeHtml(item.description)}</p>
         <div class="card-actions">
-          <button type="button" data-detail="${item.id}">查看详情</button>
           <button type="button" data-report="${item.id}">举报</button>
         </div>
       </div>
@@ -1016,7 +1050,7 @@ async function handlePostSubmit(event) {
       await db.from("listings").update({ image_url: uploadedImages[0] }).eq("id", listing.id);
     }
 
-    alert("已提交，等待管理员审核。");
+    alert("已提交，正在等待管理员审核。你可以在“我的发布”里查看待审核状态。");
     await loadListings();
   } else {
     listing.status = "approved";
@@ -1394,11 +1428,23 @@ function renderHistory() {
     return;
   }
   els.historyList.innerHTML = historyItems.map(savedItemTemplate).join("");
-  els.historyList.querySelectorAll("[data-detail]").forEach((button) => {
-    button.addEventListener("click", () => showDetail(button.dataset.detail));
+  els.historyList.querySelectorAll("[data-saved-detail]").forEach((item) => {
+    item.addEventListener("click", (event) => {
+      if (event.target.closest("button, a")) return;
+      showDetail(item.dataset.savedDetail);
+    });
+    item.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        showDetail(item.dataset.savedDetail);
+      }
+    });
   });
   els.historyList.querySelectorAll("[data-unfavorite]").forEach((button) => {
-    button.addEventListener("click", () => toggleFavorite(button.dataset.unfavorite));
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleFavorite(button.dataset.unfavorite);
+    });
   });
 }
 
