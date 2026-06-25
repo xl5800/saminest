@@ -2441,6 +2441,15 @@ body:not([data-page="home"]) .app-home {
   display: none;
 }
 
+[hidden] {
+  display: none !important;
+}
+
+body:not([data-page="home"]):not([data-page="rentals"]):not([data-page="secondhand"]) #category,
+body:not([data-page="home"]):not([data-page="rentals"]):not([data-page="secondhand"]) #search {
+  display: none !important;
+}
+
 @media (max-width: 860px) {
   body[data-page="home"] .app-home .hero-actions {
     display: grid;
