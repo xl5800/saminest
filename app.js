@@ -995,7 +995,7 @@ function renderAuthPage(title = "登录后继续", returnTo = "#home", mode = "l
     },
     forgot: {
       title: "找回密码",
-      desc: "输入注册邮箱后，直接设置一个新的登录密码。"
+      desc: "云端账号不能跳过身份验证直接改密码；如忘记密码，请联系管理员重置。"
     },
     reset: {
       title: "设置新密码",
@@ -1966,16 +1966,11 @@ document.addEventListener("submit", async (event) => {
         return;
       }
       if (cloudReady()) {
-        setAuthLoading(authForm, true, "正在发送...");
-        const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-          redirectTo: authRedirectUrl("reset")
-        });
-        setAuthLoading(authForm, false);
-        if (error) {
-          showAuthError(authForm, authErrorMessage(error));
-          return;
-        }
-        renderAuthNotice("重置邮件已发送", "请打开邮箱里的链接，然后设置新密码。", returnTo);
+        renderAuthNotice(
+          "暂不支持直接重置",
+          "为了避免别人输入你的邮箱就改掉密码，云端账号不能跳过身份验证直接重置。请联系管理员处理，或用新邮箱重新注册。",
+          returnTo
+        );
         return;
       }
       if (!localAccountForEmail(email)) {
