@@ -257,7 +257,7 @@ function uiListingToDb(listing) {
     category: listing.type === "wanted" ? "wanted" : listing.tags?.[0] || typeLabel(listing.type),
     move_in: normalizeDateValue(listing.moveIn),
     nearby: Array.isArray(listing.tags) ? listing.tags.join(", ") : "",
-    image_url: String(listing.image || "").startsWith("data:") ? null : listing.image || null,
+    image_url: listing.image || null,
     contact: listing.contact || "站内消息"
   };
 }
@@ -303,6 +303,18 @@ async function loadFavoritesFromSupabase() {
     return false;
   }
   state.favorites = (data || []).map((item) => item.listing_id);
+  saveState();
+  return true;
+}
+
+async function loadBannedUsersFromSupabase() {
+  if (!cloudReady() || !currentUserId()) return false;
+  const { data, error } = await supabaseClient.from("banned_users").select("user_id");
+  if (error) {
+    console.warn("Failed to load banned users", error);
+    return false;
+  }
+  state.bannedUsers = (data || []).map((item) => item.user_id);
   saveState();
   return true;
 }
@@ -364,6 +376,7 @@ async function refreshCloudData() {
   if (!cloudReady()) return;
   await loadListingsFromSupabase();
   if (isLoggedIn()) {
+    await loadBannedUsersFromSupabase();
     await loadFavoritesFromSupabase();
     await loadConversationsFromSupabase();
   }
@@ -472,6 +485,10 @@ function canSeeListing(item) {
   return listingStatus(item) === "active" && !state.bannedUsers.includes(item.ownerAccount);
 }
 
+function currentAccountIsBanned() {
+  return [state.session?.userId, state.session?.account].filter(Boolean).some((id) => state.bannedUsers.includes(id));
+}
+
 function listingStatus(item) {
   return item?.status || "active";
 }
@@ -500,6 +517,7 @@ function authTitle(page) {
 }
 
 function renderHome() {
+  const listings = publicListings();
   app.innerHTML = `
     <section class="home-screen">
       ${mobileHeader()}
@@ -516,17 +534,8 @@ function renderHome() {
         <a class="home-chip" href="#category/used">二手</a>
       </div>
 
-      <a class="today-strip" href="#category/all">
-        <span class="strip-icon">新</span>
-        <b>当前帖子 <strong>${publicListings().length}</strong> 条</b>
-        <i></i>
-        <b>租房 <strong>${countType("rent")}</strong> 条</b>
-        <b>二手 <strong>${countType("used")}</strong> 条</b>
-        <span class="strip-arrow">›</span>
-      </a>
-
       <div class="home-feed">
-        ${publicListings().map(homeListingCard).join("")}
+        ${listings.length ? listings.map(homeListingCard).join("") : emptyBlock("暂时还没有帖子")}
       </div>
 
       ${bottomNav("home")}
@@ -964,6 +973,18 @@ function renderAdminReview(status = "pending") {
         <span>Approved ${statusCount("active")}</span>
         <span>Rejected ${statusCount("rejected")}</span>
       </section>
+      ${
+        entries.length
+          ? `<section class="admin-bulk-bar">
+              <label><input type="checkbox" data-admin-select-all /> 全选当前页</label>
+              <div>
+                <button class="primary-button" type="button" data-bulk-review="active">批量通过</button>
+                <button class="secondary-button" type="button" data-bulk-review="rejected">批量拒绝</button>
+                <button class="danger-button" type="button" data-bulk-review="ban">批量封禁</button>
+              </div>
+            </section>`
+          : ""
+      }
       <div class="admin-list">
         ${entries.length ? entries.map(adminReviewCard).join("") : emptyBlock("这里暂时没有内容")}
       </div>
@@ -1290,7 +1311,6 @@ function mobileHeader() {
   return `
     <header class="home-header">
       <a class="home-logo" href="#home"><b>DMV</b><span>华人市场</span></a>
-      <button class="location-pill" type="button">DMV ▾</button>
     </header>
   `;
 }
@@ -1348,7 +1368,7 @@ function manageListingCard(item) {
       <div class="manage-actions">
         <a class="secondary-button" href="#listing/${item.id}">查看</a>
         <button class="secondary-button" type="button" data-edit-listing="${item.id}">编辑</button>
-        <button class="danger-button" type="button" data-delete-listing="${item.id}">删除</button>
+        <button class="danger-button" type="button" data-delete-listing="${item.id}" data-delete-origin="me">删除</button>
       </div>
     </article>
   `;
@@ -1373,6 +1393,10 @@ function manageDraftCard(draft) {
 function adminReviewCard(item) {
   return `
     <article class="admin-card">
+      <label class="admin-select">
+        <input type="checkbox" data-admin-select value="${item.id}" />
+        <span>选择</span>
+      </label>
       <img src="${item.image}" alt="${escapeHtml(item.title)}" />
       <div class="admin-card-body">
         <div class="admin-card-head">
@@ -1592,7 +1616,7 @@ async function submitListing(form, type) {
     renderAuthPage("登录后发布信息", "#publish");
     return;
   }
-  if (state.bannedUsers.includes(state.session.account)) {
+  if (currentAccountIsBanned()) {
     renderAuthPage("账号已被封禁，不能继续发布。", "#home");
     return;
   }
@@ -1708,7 +1732,15 @@ function editListing(id) {
   renderFormForType(listing.type, listing);
 }
 
-async function deleteListing(id) {
+function renderAfterListingDelete(listing, origin = "") {
+  if (origin === "admin" || location.hash.startsWith("#admin-review")) {
+    renderAdminReview(listingStatus(listing));
+    return;
+  }
+  renderMyPosts();
+}
+
+async function deleteListing(id, origin = "") {
   const listing = state.listings.find((item) => item.id === id && (isOwner(item) || isAdmin()));
   if (!listing || !window.confirm("确定删除这条发布吗？")) return;
   if (cloudReady() && currentUserId()) {
@@ -1718,7 +1750,7 @@ async function deleteListing(id) {
       return;
     }
     await loadListingsFromSupabase();
-    isAdmin() ? renderAdminReview(listingStatus(listing)) : renderMyPosts();
+    renderAfterListingDelete(listing, origin);
     return;
   }
   state.listings = state.listings.filter((item) => item.id !== id);
@@ -1726,16 +1758,22 @@ async function deleteListing(id) {
   state.history = state.history.filter((item) => item !== id);
   state.conversations = state.conversations.filter((item) => item.listingId !== id);
   saveState();
-  isAdmin() ? renderAdminReview(listingStatus(listing)) : renderMyPosts();
+  renderAfterListingDelete(listing, origin);
 }
 
 async function updateListingStatus(id, status) {
+  await updateListingStatuses([id], status);
+}
+
+async function updateListingStatuses(ids, status) {
   if (!isAdmin()) return;
+  const selectedIds = [...new Set(ids.filter(Boolean))];
+  if (!selectedIds.length) return;
   if (cloudReady()) {
     const { error } = await supabaseClient
       .from("listings")
       .update({ status: mapStatusToDb(status), updated_at: new Date().toISOString() })
-      .eq("id", id);
+      .in("id", selectedIds);
     if (error) {
       window.alert(`审核失败：${authErrorMessage(error)}`);
       return;
@@ -1744,21 +1782,65 @@ async function updateListingStatus(id, status) {
     renderAdminReview(status);
     return;
   }
-  state.listings = state.listings.map((item) => (item.id === id ? { ...item, status } : item));
+  state.listings = state.listings.map((item) => (selectedIds.includes(item.id) ? { ...item, status } : item));
   saveState();
   renderAdminReview(status);
 }
 
-function banListingOwner(id) {
+async function banListingOwners(ids) {
   if (!isAdmin()) return;
-  const listing = state.listings.find((item) => item.id === id);
-  if (!listing?.ownerAccount || !window.confirm(`确定封禁用户 ${listing.owner || listing.ownerAccount} 吗？`)) return;
-  state.bannedUsers = [...new Set([listing.ownerAccount, ...state.bannedUsers])];
-  state.listings = state.listings.map((item) =>
-    item.ownerAccount === listing.ownerAccount ? { ...item, status: "rejected" } : item
-  );
+  const selectedListings = ids.map((id) => state.listings.find((item) => item.id === id)).filter(Boolean);
+  const ownerAccounts = [...new Set(selectedListings.map((item) => item.ownerAccount).filter(Boolean))];
+  if (!ownerAccounts.length) return;
+  const label = ownerAccounts.length === 1 ? selectedListings[0].owner || ownerAccounts[0] : `${ownerAccounts.length} 个用户`;
+  if (!window.confirm(`确定封禁 ${label} 吗？封禁后这些用户的帖子会被拒绝。`)) return;
+  if (cloudReady()) {
+    const bans = ownerAccounts.map((userId) => ({
+      user_id: userId,
+      banned_by: currentUserId(),
+      reason: "管理员封禁"
+    }));
+    await supabaseClient.from("banned_users").upsert(bans, { onConflict: "user_id" });
+    const { error } = await supabaseClient
+      .from("listings")
+      .update({ status: mapStatusToDb("rejected"), updated_at: new Date().toISOString() })
+      .in("user_id", ownerAccounts);
+    if (error) {
+      window.alert(`封禁失败：${authErrorMessage(error)}`);
+      return;
+    }
+    await loadBannedUsersFromSupabase();
+    await loadListingsFromSupabase();
+    renderAdminReview("rejected");
+    return;
+  }
+  state.bannedUsers = [...new Set([...ownerAccounts, ...state.bannedUsers])];
+  state.listings = state.listings.map((item) => (ownerAccounts.includes(item.ownerAccount) ? { ...item, status: "rejected" } : item));
   saveState();
   renderAdminReview("rejected");
+}
+
+async function banListingOwner(id) {
+  await banListingOwners([id]);
+}
+
+function selectedAdminIds() {
+  return [...document.querySelectorAll("[data-admin-select]:checked")].map((input) => input.value).filter(Boolean);
+}
+
+async function bulkReviewListings(action) {
+  const ids = selectedAdminIds();
+  if (!ids.length) {
+    window.alert("请先勾选要处理的帖子。");
+    return;
+  }
+  if (action === "ban") {
+    await banListingOwners(ids);
+    return;
+  }
+  const label = action === "active" ? "通过" : "拒绝";
+  if (!window.confirm(`确定批量${label}已选择的 ${ids.length} 条帖子吗？`)) return;
+  await updateListingStatuses(ids, action);
 }
 
 async function reportListing(id) {
@@ -1858,6 +1940,42 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (char) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]
   );
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("图片读取失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function resizeImageDataUrl(dataUrl, maxSize = 1200, quality = 0.82) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+      if (scale >= 1 && dataUrl.length < 900000) {
+        resolve(dataUrl);
+        return;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    image.onerror = () => resolve(dataUrl);
+    image.src = dataUrl;
+  });
+}
+
+async function photoFileToDataUrl(file) {
+  const dataUrl = await readFileAsDataUrl(file);
+  if (!String(file.type || "").startsWith("image/")) return dataUrl;
+  return resizeImageDataUrl(dataUrl);
 }
 
 document.addEventListener("submit", async (event) => {
@@ -2108,7 +2226,7 @@ document.addEventListener("click", async (event) => {
 
   const deleteListingButton = event.target.closest("[data-delete-listing]");
   if (deleteListingButton) {
-    await deleteListing(deleteListingButton.dataset.deleteListing);
+    await deleteListing(deleteListingButton.dataset.deleteListing, deleteListingButton.dataset.deleteOrigin);
     return;
   }
 
@@ -2131,9 +2249,23 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  const bulkReviewButton = event.target.closest("[data-bulk-review]");
+  if (bulkReviewButton) {
+    await bulkReviewListings(bulkReviewButton.dataset.bulkReview);
+    return;
+  }
+
+  const selectAll = event.target.closest("[data-admin-select-all]");
+  if (selectAll) {
+    document.querySelectorAll("[data-admin-select]").forEach((input) => {
+      input.checked = selectAll.checked;
+    });
+    return;
+  }
+
   const banButton = event.target.closest("[data-ban-user]");
   if (banButton) {
-    banListingOwner(banButton.dataset.banUser);
+    await banListingOwner(banButton.dataset.banUser);
     return;
   }
 
@@ -2171,25 +2303,28 @@ document.addEventListener("click", async (event) => {
   }
 });
 
-document.addEventListener("change", (event) => {
+document.addEventListener("change", async (event) => {
   const input = event.target.closest("[data-photo-input]");
   if (!input || !input.files?.[0]) return;
 
   const file = input.files[0];
-  const reader = new FileReader();
-  reader.onload = () => {
-    const tile = input.closest(".upload-tile");
-    const form = input.closest("form");
-    const dataInput = form.querySelector("[data-photo-data]");
-    const preview = form.querySelector("[data-photo-preview]");
-    const placeholder = form.querySelector("[data-photo-placeholder]");
-    dataInput.value = String(reader.result || "");
+  const tile = input.closest(".upload-tile");
+  const form = input.closest("form");
+  const dataInput = form.querySelector("[data-photo-data]");
+  const preview = form.querySelector("[data-photo-preview]");
+  const placeholder = form.querySelector("[data-photo-placeholder]");
+  placeholder.textContent = "处理中...";
+  try {
+    dataInput.value = await photoFileToDataUrl(file);
     preview.src = dataInput.value;
     preview.hidden = false;
     placeholder.textContent = "更换照片";
     tile.classList.add("has-preview");
-  };
-  reader.readAsDataURL(file);
+  } catch (error) {
+    console.warn("Failed to read photo", error);
+    placeholder.textContent = "选择照片";
+    window.alert("图片读取失败，请换一张照片再试。");
+  }
 });
 
 if (hasSupabaseAuth()) {

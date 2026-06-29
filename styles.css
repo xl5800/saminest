@@ -3384,3 +3384,126 @@ body[data-page="auth"] .mobile-nav {
     box-shadow: 0 24px 80px rgba(15, 23, 42, 0.2) !important;
   }
 }
+
+/* V5 admin batch actions and full-width home */
+body[data-page="home"] {
+  background: #ffffff !important;
+}
+
+body[data-page="home"] .app-shell {
+  display: block !important;
+  min-height: 100vh !important;
+  padding: 0 !important;
+  background: #ffffff !important;
+}
+
+body[data-page="home"] .app-main {
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 100vh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #ffffff !important;
+}
+
+body[data-page="home"] .home-screen {
+  width: 100% !important;
+  min-height: 100vh !important;
+  padding: 24px clamp(16px, 4vw, 40px) 88px !important;
+  border-radius: 0 !important;
+  background: #ffffff !important;
+  box-shadow: none !important;
+}
+
+body[data-page="home"] .home-header,
+body[data-page="home"] .home-search,
+body[data-page="home"] .home-chips,
+body[data-page="home"] .home-feed {
+  width: min(720px, 100%) !important;
+  margin-right: auto !important;
+  margin-left: auto !important;
+}
+
+body[data-page="home"] .home-header {
+  grid-template-columns: 1fr !important;
+}
+
+.location-pill,
+.today-strip {
+  display: none !important;
+}
+
+body[data-page="home"] .home-feed {
+  margin-top: 18px !important;
+}
+
+.admin-bulk-bar {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid #e2e9f1;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.admin-bulk-bar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #233044;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.admin-bulk-bar input,
+.admin-select input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--home-accent);
+}
+
+.admin-bulk-bar > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-bulk-bar button {
+  width: 100%;
+  min-height: 38px;
+}
+
+.admin-card {
+  position: relative;
+}
+
+.admin-select {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #e2e9f1;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #233044;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+@media (max-width: 520px) {
+  .admin-bulk-bar > div {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 760px) {
+  body[data-page="home"] .app-shell {
+    padding: 0 !important;
+  }
+
+  body[data-page="home"] .home-screen {
+    min-height: 100vh !important;
+  }
+}
