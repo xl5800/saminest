@@ -101,37 +101,19 @@ function loadState() {
 
   return {
     session: { loggedIn: false },
-    user: { name: "xlw0980", subtitle: "DMV 华人租房二手", avatar: "B" },
+    user: { name: "xlw0980", subtitle: "华聚", avatar: "B" },
     listings: seedListings,
     favorites: ["rent-rockville"],
     drafts: [],
     history: [],
-    conversations: [
-      {
-        id: "conv-rockville",
-        listingId: "rent-rockville",
-        name: "Rockville 房东",
-        avatar: "王",
-        lastMessage: "可以今晚 7 点以后看房，地址我发你。",
-        time: "2分钟前",
-        messages: ["你好，房间还在吗？", "还在，可以今晚 7 点以后看房。"]
-      },
-      {
-        id: "conv-lisa",
-        listingId: "rent-wanted-bethesda",
-        name: "Lisa Chen",
-        avatar: "L",
-        lastMessage: "我有一间 Bethesda 附近单间，预算符合。",
-        time: "18分钟前",
-        messages: ["你好，我看到你的求租需求。", "我有一间 Bethesda 附近单间。"]
-      }
-    ]
+    conversations: [],
+    feedback: []
   };
 }
 
 function ensureStateDefaults() {
   state.session ||= { loggedIn: false };
-  state.user ||= { name: "xlw0980", subtitle: "DMV 华人租房二手", avatar: "B" };
+  state.user ||= { name: "xlw0980", subtitle: "华聚", avatar: "B" };
   state.accounts ||= {};
   if (!state.accounts["admin@dmv.test"]) {
     state.accounts["admin@dmv.test"] = { name: "管理员", password: "admin123", role: "admin", email: "admin@dmv.test" };
@@ -155,6 +137,7 @@ function ensureStateDefaults() {
   state.drafts ||= [];
   state.history ||= [];
   state.conversations ||= [];
+  state.feedback ||= [];
 }
 
 function saveState() {
@@ -213,7 +196,34 @@ function timeAgo(value) {
   return `${Math.floor(hours / 24)}天前`;
 }
 
-function dbListingToUi(row, profileMap = {}) {
+function normalizeImages(value) {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  const text = String(value || "").trim();
+  if (!text) return [];
+  if (text.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(text);
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  }
+  return text ? [text] : [];
+}
+
+function listingImages(item = {}) {
+  const explicitImages = [...normalizeImages(item.images), ...normalizeImages(item.imageDataUrls)];
+  if (explicitImages.length) return [...new Set(explicitImages)];
+  const image = item.image || "";
+  const isFallback = Object.values(fallbackImages).includes(image);
+  return image && (!isFallback || item.photoCount) ? [image] : [];
+}
+
+function imagePreviewTemplate(images = []) {
+  return images.map((src, index) => `<img src="${escapeHtml(src)}" alt="已选图片 ${index + 1}" />`).join("");
+}
+
+function dbListingToUi(row, profileMap = {}, imageMap = {}) {
   const type = mapTypeFromDb(row);
   const tags = String(row.nearby || row.category || "")
     .split(/[,，、]/)
@@ -221,6 +231,7 @@ function dbListingToUi(row, profileMap = {}) {
     .filter(Boolean);
   const ownerProfile = profileMap[row.user_id] || {};
   const ownerName = ownerProfile.display_name || ownerProfile.email || "发布者";
+  const images = imageMap[row.id]?.length ? imageMap[row.id] : normalizeImages(row.image_url);
   return {
     id: row.id,
     type,
@@ -230,8 +241,9 @@ function dbListingToUi(row, profileMap = {}) {
     time: timeAgo(row.created_at),
     tags,
     detailTags: tags.length ? tags : [typeLabel(type)],
-    photoCount: row.image_url ? 1 : 0,
-    image: row.image_url || fallbackImages[type] || fallbackImages.used,
+    photoCount: images.length,
+    image: images[0] || fallbackImages[type] || fallbackImages.used,
+    images,
     desc: row.description || "",
     roomType: row.category || "",
     moveIn: row.move_in || "",
@@ -246,6 +258,7 @@ function dbListingToUi(row, profileMap = {}) {
 }
 
 function uiListingToDb(listing) {
+  const images = listingImages(listing);
   return {
     user_id: currentUserId(),
     type: mapTypeToDb(listing.type),
@@ -257,7 +270,7 @@ function uiListingToDb(listing) {
     category: listing.type === "wanted" ? "wanted" : listing.tags?.[0] || typeLabel(listing.type),
     move_in: normalizeDateValue(listing.moveIn),
     nearby: Array.isArray(listing.tags) ? listing.tags.join(", ") : "",
-    image_url: listing.image || null,
+    image_url: images[0] || listing.image || null,
     contact: listing.contact || "站内消息"
   };
 }
@@ -276,6 +289,25 @@ async function fetchProfilesMap(userIds = []) {
   return Object.fromEntries((data || []).map((profile) => [profile.id, profile]));
 }
 
+async function fetchListingImagesMap(listingIds = []) {
+  const ids = [...new Set(listingIds.filter(Boolean))];
+  if (!cloudReady() || !ids.length) return {};
+  const { data, error } = await supabaseClient
+    .from("listing_images")
+    .select("listing_id,image_url,sort_order")
+    .in("listing_id", ids)
+    .order("sort_order", { ascending: true });
+  if (error) {
+    console.warn("Failed to load listing images", error);
+    return {};
+  }
+  return (data || []).reduce((map, item) => {
+    map[item.listing_id] ||= [];
+    if (item.image_url) map[item.listing_id].push(item.image_url);
+    return map;
+  }, {});
+}
+
 async function loadListingsFromSupabase() {
   if (!cloudReady()) return false;
   const { data, error } = await supabaseClient
@@ -287,8 +319,31 @@ async function loadListingsFromSupabase() {
     return false;
   }
   const profileMap = await fetchProfilesMap((data || []).map((item) => item.user_id));
-  state.listings = (data || []).map((item) => dbListingToUi(item, profileMap));
+  const imageMap = await fetchListingImagesMap((data || []).map((item) => item.id));
+  state.listings = (data || []).map((item) => dbListingToUi(item, profileMap, imageMap));
   saveState();
+  return true;
+}
+
+async function saveListingImagesToSupabase(listingId, images = []) {
+  if (!cloudReady() || !listingId) return false;
+  const cleanImages = [...new Set(images.filter(Boolean))];
+  const deleted = await supabaseClient.from("listing_images").delete().eq("listing_id", listingId);
+  if (deleted.error) {
+    console.warn("Failed to clear listing images", deleted.error);
+    return false;
+  }
+  if (!cleanImages.length) return true;
+  const rows = cleanImages.map((imageUrl, index) => ({
+    listing_id: listingId,
+    image_url: imageUrl,
+    sort_order: index
+  }));
+  const { error } = await supabaseClient.from("listing_images").insert(rows);
+  if (error) {
+    console.warn("Failed to save listing images", error);
+    return false;
+  }
   return true;
 }
 
@@ -315,6 +370,29 @@ async function loadBannedUsersFromSupabase() {
     return false;
   }
   state.bannedUsers = (data || []).map((item) => item.user_id);
+  saveState();
+  return true;
+}
+
+async function loadFeedbackFromSupabase() {
+  if (!cloudReady() || !isAdmin()) return false;
+  const { data, error } = await supabaseClient
+    .from("feedback")
+    .select("id,user_id,email,message,status,created_at")
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.warn("Failed to load feedback", error);
+    return false;
+  }
+  state.feedback = (data || []).map((item) => ({
+    id: item.id,
+    account: item.user_id || item.email || "用户",
+    email: item.email || "",
+    message: item.message || "",
+    status: item.status || "new",
+    time: timeAgo(item.created_at),
+    createdAt: new Date(item.created_at || Date.now()).getTime()
+  }));
   saveState();
   return true;
 }
@@ -379,6 +457,7 @@ async function refreshCloudData() {
     await loadBannedUsersFromSupabase();
     await loadFavoritesFromSupabase();
     await loadConversationsFromSupabase();
+    if (isAdmin()) await loadFeedbackFromSupabase();
   }
 }
 
@@ -420,7 +499,7 @@ function route() {
   if (requiresAuth(page) && !isLoggedIn()) {
     return renderAuthPage(authTitle(page), `#${hash}`, "login");
   }
-  if (page === "admin-review" && !isAdmin()) {
+  if ((page === "admin-review" || page === "admin-feedback") && !isAdmin()) {
     return renderNoAccess();
   }
 
@@ -439,6 +518,7 @@ function route() {
   if (page === "favorites") return renderSavedList("我的收藏", favoriteListings(), "收藏过的帖子会显示在这里。");
   if (page === "history") return renderSavedList("浏览历史", historyListings(), "看过的帖子会显示在这里。");
   if (page === "feedback") return renderFeedback();
+  if (page === "admin-feedback") return renderAdminFeedback();
   if (page === "help") return renderHelp();
   if (page === "settings") return renderSettings();
   if (page === "admin-review") return renderAdminReview(id || "pending");
@@ -457,8 +537,10 @@ function requiresAuth(page) {
     "me-posts",
     "drafts",
     "favorites",
+    "feedback",
     "settings",
-    "admin-review"
+    "admin-review",
+    "admin-feedback"
   ].includes(page);
 }
 
@@ -510,8 +592,10 @@ function authTitle(page) {
       "me-posts": "登录后查看我的发布",
       drafts: "登录后查看草稿",
       favorites: "登录后查看收藏",
+      feedback: "登录后提交意见反馈",
       settings: "登录后进入设置",
-      "admin-review": "管理员登录后审核内容"
+      "admin-review": "管理员登录后审核内容",
+      "admin-feedback": "管理员登录后查看反馈"
     }[page] || "登录后继续"
   );
 }
@@ -576,13 +660,15 @@ function renderDetail(id) {
   rememberHistory(item.id);
   const favored = state.favorites.includes(item.id);
   const canReport = !isOwner(item) && !isAdmin();
+  const detailImages = listingImages(item);
+  const galleryImages = detailImages.length ? detailImages : [item.image];
 
   app.innerHTML = `
     <section class="page-screen">
       ${pageHeader("详情")}
       <div class="detail-layout">
         <div class="detail-gallery">
-          <img class="detail-photo" src="${item.image}" alt="${escapeHtml(item.title)}" />
+          ${galleryImages.map((src, index) => `<img class="detail-photo ${index ? "secondary" : ""}" src="${escapeHtml(src)}" alt="${escapeHtml(item.title)} 图片 ${index + 1}" />`).join("")}
         </div>
         <article class="detail-panel">
           <div class="detail-title-row">
@@ -724,8 +810,7 @@ function renderWantedForm(source = {}) {
 }
 
 function formShell(config, values = {}) {
-  const previewImage = values.imageDataUrl || values.image || "";
-  const previewSrc = previewImage || "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+  const previewImages = listingImages(values);
   return `
     <section class="page-screen form-page">
       ${pageHeader(config.title)}
@@ -733,17 +818,16 @@ function formShell(config, values = {}) {
       <form data-listing-form="${config.kind}" data-editing-id="${values.id || ""}" data-draft-id="${values.draftId || ""}">
         <section class="form-card">
           <h2>${config.imageTitle}</h2>
-          <p class="helper">${config.imageHelper}</p>
-          <div class="photo-strip">
-            <label class="upload-tile cover ${previewImage ? "has-preview" : ""}">
-              <input class="visually-hidden" type="file" name="photo" accept="image/*" data-photo-input />
-              <input type="hidden" name="imageDataUrl" value="${escapeHtml(values.imageDataUrl || "")}" data-photo-data />
-              <span data-photo-placeholder>${previewImage ? "更换照片" : "+ 选择照片"}</span>
-              <img src="${previewSrc}" alt="" data-photo-preview ${previewImage ? "" : "hidden"} />
+          <div class="photo-strip multi">
+            <label class="upload-tile cover ${previewImages.length ? "has-preview" : ""}">
+              <input class="visually-hidden" type="file" name="photo" accept="image/*" multiple data-photo-input />
+              <input type="hidden" name="imageDataUrls" value="${escapeHtml(JSON.stringify(previewImages))}" data-photo-data />
+              <input type="hidden" name="imageDataUrl" value="${escapeHtml(previewImages[0] || "")}" data-photo-first />
+              <span data-photo-placeholder>${previewImages.length ? `已选 ${previewImages.length} 张` : "+ 选择照片"}</span>
             </label>
-            <div class="upload-tile">手机可拍照</div>
-            <div class="upload-tile">电脑可选图</div>
-            <div class="upload-tile">可先跳过</div>
+            <div class="photo-preview-grid" data-photo-preview-grid>
+              ${imagePreviewTemplate(previewImages)}
+            </div>
           </div>
         </section>
         <section class="form-card">
@@ -784,7 +868,7 @@ function renderProfile() {
     ["草稿", "drafts"],
     ["我的收藏", "favorites"],
     ["浏览历史", "history"],
-    ...(isAdmin() ? [["管理员审核", "admin-review/pending"]] : []),
+    ...(isAdmin() ? [["管理员审核", "admin-review/pending"], ["反馈管理", "admin-feedback"]] : []),
     ["意见反馈", "feedback"],
     ["帮助中心", "help"],
     ["设置", "settings"]
@@ -893,12 +977,37 @@ function renderFeedback() {
   app.innerHTML = `
     <section class="page-screen">
       ${pageHeader("意见反馈")}
-      <section class="subpage-card">
+      <form class="subpage-card" data-feedback-form>
         <p>告诉我们哪里不好用，或者你希望增加什么功能。</p>
-        <textarea class="feedback-box" placeholder="例如：希望增加地图找房、帖子置顶、微信提醒..."></textarea>
-        <a class="primary-button" href="#me">提交反馈</a>
-      </section>
+        <textarea class="feedback-box" name="message" placeholder="例如：希望增加地图找房、帖子置顶、微信提醒..." required></textarea>
+        <button class="primary-button" type="submit">提交反馈</button>
+      </form>
     </section>
+  `;
+}
+
+function renderAdminFeedback() {
+  const entries = [...(state.feedback || [])].sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+  app.innerHTML = `
+    <section class="page-screen admin-screen">
+      ${pageHeader("反馈管理")}
+      <div class="admin-list">
+        ${entries.length ? entries.map(feedbackCard).join("") : emptyBlock("暂时还没有用户反馈")}
+      </div>
+      ${bottomNav("me")}
+    </section>
+  `;
+}
+
+function feedbackCard(item) {
+  return `
+    <article class="feedback-card">
+      <div>
+        <b>${escapeHtml(item.email || item.account || "用户")}</b>
+        <span>${escapeHtml(item.time || "刚刚")}</span>
+      </div>
+      <p>${escapeHtml(item.message || "")}</p>
+    </article>
   `;
 }
 
@@ -1031,8 +1140,8 @@ function renderAuthPage(title = "登录后继续", returnTo = "#home", mode = "l
         ${helpLink ? `<a href="#help">帮助</a>` : `<span></span>`}
       </header>
       <section class="auth-card auth-v2-card" aria-label="账号页面">
-        <a class="auth-brand-v2" href="#home" aria-label="DMV 华人市场首页">
-          <span>DMV</span><b>华人市场</b>
+        <a class="auth-brand-v2" href="#home" aria-label="华聚首页">
+          <span>华聚</span>
         </a>
         ${content}
       </section>
@@ -1042,7 +1151,7 @@ function renderAuthPage(title = "登录后继续", returnTo = "#home", mode = "l
   const titleBlock = (currentMode) => `
     <div class="auth-title-block">
       <h1>${escapeHtml(copy[currentMode]?.title || "欢迎回来")}</h1>
-      <p>${escapeHtml(copy[currentMode]?.desc || "登录后继续使用 DMV 华人市场。")}</p>
+      <p>${escapeHtml(copy[currentMode]?.desc || "登录后继续使用华聚。")}</p>
     </div>
   `;
 
@@ -1211,8 +1320,8 @@ function renderAuthNotice(title, desc, returnTo = "#home", actionLabel = "返回
         <span></span>
       </header>
       <section class="auth-card auth-v2-card" aria-label="账号页面">
-        <a class="auth-brand-v2" href="#home" aria-label="DMV 华人市场首页">
-          <span>DMV</span><b>华人市场</b>
+        <a class="auth-brand-v2" href="#home" aria-label="华聚首页">
+          <span>华聚</span>
         </a>
         <div class="auth-success-card">
           <span class="auth-success-icon">✓</span>
@@ -1232,7 +1341,7 @@ async function ensureSupabaseProfile(user, displayName = "") {
   if (!cloudReady() || !user) return null;
   const email = normalizeAuthEmail(user.email);
   const role = email === ADMIN_EMAIL ? "admin" : "user";
-  const fallbackName = displayName || user.user_metadata?.display_name || user.user_metadata?.name || email.split("@")[0] || "DMV用户";
+  const fallbackName = displayName || user.user_metadata?.display_name || user.user_metadata?.name || email.split("@")[0] || "华聚用户";
   const payload = {
     id: user.id,
     email,
@@ -1255,7 +1364,7 @@ async function completeSupabaseAuth(user, returnTo = "#home", displayName = "") 
   if (!user) return;
   const email = normalizeAuthEmail(user.email);
   const profile = await ensureSupabaseProfile(user, displayName);
-  const userName = profile?.display_name || displayName || user.user_metadata?.display_name || user.user_metadata?.name || (email ? email.split("@")[0] : "DMV用户");
+  const userName = profile?.display_name || displayName || user.user_metadata?.display_name || user.user_metadata?.name || (email ? email.split("@")[0] : "华聚用户");
   completeAuth(email || user.id, {
     name: userName,
     email,
@@ -1287,7 +1396,7 @@ async function syncSupabaseSession() {
 }
 
 function completeAuth(account, savedAccount, returnTo) {
-  const userName = savedAccount?.name || `用户${String(account).slice(-4)}` || "DMV用户";
+  const userName = savedAccount?.name || `用户${String(account).slice(-4)}` || "华聚用户";
   const role = savedAccount?.role || (String(account).toLowerCase().includes("admin") ? "admin" : "user");
   state.session = {
     loggedIn: true,
@@ -1299,7 +1408,7 @@ function completeAuth(account, savedAccount, returnTo) {
   };
   state.user = {
     name: userName,
-    subtitle: "DMV 华人租房二手",
+    subtitle: "华聚",
     avatar: (userName || account || "D").slice(0, 1).toUpperCase()
   };
   saveState();
@@ -1310,7 +1419,7 @@ function completeAuth(account, savedAccount, returnTo) {
 function mobileHeader() {
   return `
     <header class="home-header">
-      <a class="home-logo" href="#home"><b>DMV</b><span>华人市场</span></a>
+      <a class="home-logo" href="#home"><b>华聚</b></a>
     </header>
   `;
 }
@@ -1326,12 +1435,13 @@ function pageHeader(title) {
 }
 
 function bottomNav(active) {
+  const messageCount = isLoggedIn() ? state.conversations.length : 0;
   return `
     <nav class="home-bottom-nav" aria-label="底部导航">
       <a class="${active === "home" ? "active" : ""}" href="#home"><span>⌂</span>首页</a>
       <a class="${active === "category" ? "active" : ""}" href="#category/all"><span>▦</span>分类</a>
       <a class="home-publish ${active === "publish" ? "active" : ""}" href="#publish"><span>＋</span>发布</a>
-      <a class="${active === "messages" ? "active" : ""}" href="#messages"><span>信</span>消息${state.conversations.length ? `<em>${state.conversations.length}</em>` : ""}</a>
+      <a class="${active === "messages" ? "active" : ""}" href="#messages"><span>信</span>消息${messageCount ? `<em>${messageCount}</em>` : ""}</a>
       <a class="${active === "me" ? "active" : ""}" href="#me"><span>○</span>我的</a>
     </nav>
   `;
@@ -1469,6 +1579,7 @@ function selectField(name, label, options, value = "") {
 function formValues(source = {}) {
   const data = source.data || source;
   const tagText = Array.isArray(data.tags) ? data.tags.join(", ") : data.tags || "";
+  const images = listingImages(data);
   return {
     id: data.id || "",
     draftId: source.data ? source.id : "",
@@ -1480,8 +1591,10 @@ function formValues(source = {}) {
     moveIn: data.moveIn || "",
     contact: data.contact || "",
     desc: data.desc || "",
-    image: data.image || "",
-    imageDataUrl: data.imageDataUrl || (String(data.image || "").startsWith("data:") ? data.image : "")
+    image: data.image || images[0] || "",
+    images,
+    imageDataUrls: images,
+    imageDataUrl: images[0] || data.imageDataUrl || (String(data.image || "").startsWith("data:") ? data.image : "")
   };
 }
 
@@ -1627,8 +1740,10 @@ async function submitListing(form, type) {
   const tags = normalizeList(data.tags).length ? normalizeList(data.tags) : selectedChips;
   const detailTags = tags.length ? tags : [typeLabel(type)];
   const existing = editingId ? state.listings.find((item) => item.id === editingId) : null;
-  const imageDataUrl = String(data.imageDataUrl || "");
-  const image = imageDataUrl || existing?.image || fallbackImages[type];
+  const selectedImages = normalizeImages(data.imageDataUrls);
+  const existingImages = existing ? listingImages(existing) : [];
+  const images = selectedImages.length ? selectedImages : existingImages;
+  const image = images[0] || fallbackImages[type];
 
   const listing = {
     id: existing?.id || `${type}-${Date.now()}`,
@@ -1639,9 +1754,11 @@ async function submitListing(form, type) {
     time: existing?.time || "刚刚",
     tags,
     detailTags,
-    photoCount: imageDataUrl ? 1 : existing?.photoCount || 0,
+    photoCount: images.length,
     image,
-    imageDataUrl,
+    images,
+    imageDataUrls: images,
+    imageDataUrl: images[0] || "",
     desc: cleanOr(data.desc, "暂无详细描述。"),
     roomType: cleanOr(data.roomType, ""),
     moveIn: cleanOr(data.moveIn, ""),
@@ -1663,6 +1780,7 @@ async function submitListing(form, type) {
       window.alert(`发布失败：${authErrorMessage(error)}`);
       return;
     }
+    await saveListingImagesToSupabase(savedListing.id, images);
     if (draftId) {
       state.drafts = state.drafts.filter((draft) => draft.id !== draftId);
     }
@@ -1691,6 +1809,9 @@ function saveDraft(form, type) {
   const draftId = form.dataset.draftId;
   const editingId = form.dataset.editingId;
   const existingListing = editingId ? state.listings.find((item) => item.id === editingId) : null;
+  const selectedImages = normalizeImages(data.imageDataUrls);
+  const existingImages = existingListing ? listingImages(existingListing) : [];
+  const images = selectedImages.length ? selectedImages : existingImages;
   const draft = {
     id: draftId || `draft-${Date.now()}`,
     type,
@@ -1699,7 +1820,10 @@ function saveDraft(form, type) {
     data: {
       ...data,
       id: editingId || "",
-      image: data.imageDataUrl || existingListing?.image || "",
+      image: images[0] || "",
+      images,
+      imageDataUrls: images,
+      imageDataUrl: images[0] || "",
       tags: data.tags || ""
     }
   };
@@ -1873,6 +1997,42 @@ async function reportListing(id) {
 
 function reportCount(id) {
   return state.reports.filter((report) => report.listingId === id).length;
+}
+
+async function submitFeedback(form) {
+  if (!isLoggedIn()) {
+    renderAuthPage("登录后提交意见反馈", "#feedback");
+    return;
+  }
+  const message = String(new FormData(form).get("message") || "").trim();
+  if (!message) return;
+  const feedback = {
+    id: `feedback-${Date.now()}`,
+    account: state.session.userId || state.session.account || "",
+    email: state.session.email || state.session.account || "",
+    message,
+    status: "new",
+    time: "刚刚",
+    createdAt: Date.now()
+  };
+  if (cloudReady() && currentUserId()) {
+    const { error } = await supabaseClient.from("feedback").insert({
+      user_id: currentUserId(),
+      email: feedback.email,
+      message,
+      status: "new"
+    });
+    if (error) {
+      window.alert(`提交失败：${authErrorMessage(error)}`);
+      return;
+    }
+  } else {
+    state.feedback = [feedback, ...(state.feedback || [])];
+    saveState();
+  }
+  window.alert("反馈已提交，管理员会在后台查看。");
+  location.hash = "#me";
+  route();
 }
 
 function editDraft(id) {
@@ -2163,6 +2323,13 @@ document.addEventListener("submit", async (event) => {
     return;
   }
 
+  const feedbackForm = event.target.closest("[data-feedback-form]");
+  if (feedbackForm) {
+    event.preventDefault();
+    await submitFeedback(feedbackForm);
+    return;
+  }
+
   const messageForm = event.target.closest("[data-message-form]");
   if (messageForm) {
     event.preventDefault();
@@ -2307,18 +2474,20 @@ document.addEventListener("change", async (event) => {
   const input = event.target.closest("[data-photo-input]");
   if (!input || !input.files?.[0]) return;
 
-  const file = input.files[0];
+  const files = [...input.files];
   const tile = input.closest(".upload-tile");
   const form = input.closest("form");
   const dataInput = form.querySelector("[data-photo-data]");
-  const preview = form.querySelector("[data-photo-preview]");
+  const firstInput = form.querySelector("[data-photo-first]");
+  const previewGrid = form.querySelector("[data-photo-preview-grid]");
   const placeholder = form.querySelector("[data-photo-placeholder]");
   placeholder.textContent = "处理中...";
   try {
-    dataInput.value = await photoFileToDataUrl(file);
-    preview.src = dataInput.value;
-    preview.hidden = false;
-    placeholder.textContent = "更换照片";
+    const images = await Promise.all(files.map(photoFileToDataUrl));
+    dataInput.value = JSON.stringify(images);
+    firstInput.value = images[0] || "";
+    previewGrid.innerHTML = imagePreviewTemplate(images);
+    placeholder.textContent = images.length ? `已选 ${images.length} 张` : "+ 选择照片";
     tile.classList.add("has-preview");
   } catch (error) {
     console.warn("Failed to read photo", error);

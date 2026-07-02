@@ -3507,3 +3507,82 @@ body[data-page="home"] .home-feed {
     min-height: 100vh !important;
   }
 }
+
+/* V6 multi-photo posting, feedback management, Huaju brand */
+.brand-mark {
+  width: auto !important;
+  min-width: 46px !important;
+  padding: 0 9px !important;
+  font-size: 13px !important;
+}
+
+.photo-strip.multi {
+  grid-template-columns: 1fr !important;
+  gap: 12px !important;
+  overflow: visible !important;
+}
+
+.photo-strip.multi .upload-tile.cover {
+  min-height: 88px !important;
+}
+
+.photo-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 8px;
+}
+
+.photo-preview-grid img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #e6edf3;
+}
+
+.detail-gallery {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.detail-gallery .detail-photo:first-child {
+  grid-column: 1 / -1;
+}
+
+.detail-gallery .detail-photo.secondary {
+  aspect-ratio: 1 / 1;
+}
+
+.feedback-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #e2e9f1;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.feedback-card > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.feedback-card b {
+  color: #16212c;
+  font-size: 14px;
+}
+
+.feedback-card span {
+  color: #7a8796;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.feedback-card p {
+  margin: 0;
+  color: #233044;
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
