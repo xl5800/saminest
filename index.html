@@ -3,54 +3,461 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>华聚</title>
-    <link rel="preconnect" href="https://images.unsplash.com" />
-    <link rel="stylesheet" href="styles.css" />
+    <title>DMV华人集市 - 租房二手</title>
+    <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <header class="topbar">
-        <button class="icon-button back-button" type="button" aria-label="返回">‹</button>
-        <a class="brand" href="#home" aria-label="华聚首页">
-          <span class="brand-mark">华聚</span>
-        </a>
-        <nav class="desktop-nav" aria-label="主导航">
-          <a href="#home">首页</a>
-          <a href="#category/rent">租房</a>
-          <a href="#category/wanted">求租</a>
-          <a href="#category/used">二手</a>
-        </nav>
-        <a class="top-action" href="#publish">发布</a>
-      </header>
-
-      <main id="app" class="app-main" aria-live="polite"></main>
-
-      <nav class="mobile-nav" aria-label="底部导航">
-        <a href="#home" data-route="home">
-          <span>⌂</span>
-          首页
-        </a>
-        <a href="#category/all" data-route="category">
-          <span>▦</span>
-          分类
-        </a>
-        <a class="publish-tab" href="#publish" data-route="publish">
-          <span>＋</span>
-          发布
-        </a>
-        <a href="#messages" data-route="messages">
-          <span>✉</span>
-          消息
-        </a>
-        <a href="#me" data-route="me">
-          <span>○</span>
-          我的
-        </a>
+    <header class="topbar">
+      <a class="brand" href="#home" aria-label="DMV华人集市首页">
+        <span class="brand-mark">D</span>
+        <span>
+          <strong>DMV华人集市</strong>
+          <small>租房 · 二手 · 搬家清仓</small>
+        </span>
+      </a>
+      <nav class="desktop-nav" aria-label="主导航">
+        <a href="#home">首页</a>
+        <a href="#rentals">找租房</a>
+        <a href="#secondhand">看二手</a>
+        <a href="#favorites">收藏</a>
+        <a href="#post" data-open-post>发布</a>
+        <a href="#messages">消息</a>
+        <a href="#account">我的</a>
       </nav>
-    </div>
+      <div class="top-actions">
+        <button class="ghost-btn" id="seedButton" type="button">重置示例</button>
+        <button class="primary-btn compact-btn" id="loginButton" type="button">登录</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero section app-home" id="home">
+        <div class="hero-copy">
+          <div class="app-location">
+            <strong>DMV</strong>
+            <span>附近</span>
+            <span>租房</span>
+          </div>
+          <p class="eyebrow">DMV LOCAL MARKET</p>
+          <h1>租房和二手，本地华人生活信息。</h1>
+          <p>先做好两个核心功能：找房源、看二手。其他服务等功能成熟后再开放。</p>
+          <div class="hero-actions">
+            <a class="primary-btn" href="#rentals">找租房</a>
+            <a class="secondary-btn" href="#secondhand">看二手</a>
+            <a class="secondary-btn" href="#post" data-open-post>免费发布</a>
+          </div>
+        </div>
+        <div class="hero-panel" aria-label="平台数据概览">
+          <div>
+            <span id="statRental">0</span>
+            <small>租房/转租</small>
+          </div>
+          <div>
+            <span id="statSecondhand">0</span>
+            <small>二手/清仓</small>
+          </div>
+          <div>
+            <span id="statFresh">0</span>
+            <small>7天内更新</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="section category-section" id="category" aria-label="快捷分类">
+        <div class="category-grid">
+          <a class="category-tile" href="#rentals" data-post-type="rental">
+            <span class="cat-icon cat-orange">租</span>
+            <strong>租房</strong>
+          </a>
+          <a class="category-tile" href="#secondhand">
+            <span class="cat-icon cat-blue">二</span>
+            <strong>二手</strong>
+          </a>
+        </div>
+      </section>
+
+      <section class="section search-band" id="search">
+        <div>
+          <p class="eyebrow">Search</p>
+          <h2>按地区和条件筛选</h2>
+          <p class="search-note">先选地区，也可以输入小区、学校、地铁站或邮编。</p>
+        </div>
+        <div class="filters">
+          <label>
+            关键词
+            <input id="searchInput" type="search" placeholder="例如 UMD、独卫、沙发" />
+          </label>
+          <label>
+            地区
+            <select id="areaFilter"></select>
+          </label>
+          <label>
+            自定义地区
+            <input id="customAreaFilter" type="search" placeholder="例如 Alexandria / McLean / Laurel" />
+          </label>
+          <label>
+            最高价格
+            <input id="maxPriceInput" type="number" min="0" placeholder="不限" />
+          </label>
+          <label>
+            我的位置
+            <input id="locationInput" type="search" placeholder="例如 Rockville / UMD / 20850" />
+          </label>
+          <label>
+            距离范围
+            <select id="radiusFilter">
+              <option value="">不限距离</option>
+              <option value="3">3 miles</option>
+              <option value="5">5 miles</option>
+              <option value="10">10 miles</option>
+              <option value="15">15 miles</option>
+              <option value="25">25 miles</option>
+              <option value="50">50 miles</option>
+            </select>
+          </label>
+          <div class="location-actions">
+            <button class="secondary-btn" id="useLocationButton" type="button">使用当前位置</button>
+            <small id="locationStatus">距离筛选仅用于租房。</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="section split" id="rentals">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Rentals</p>
+            <h2>DMV 租房与转租</h2>
+          </div>
+          <a href="#post" class="link-btn" data-post-type="rental">发布租房</a>
+        </div>
+        <div class="listing-grid" id="rentalList"></div>
+      </section>
+
+      <section class="section split" id="secondhand">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Secondhand</p>
+            <h2>二手与搬家清仓</h2>
+          </div>
+          <a href="#post" class="link-btn" data-post-type="secondhand">发布二手</a>
+        </div>
+        <div class="listing-grid" id="secondhandList"></div>
+      </section>
+
+      <section class="section post-section" id="post" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Post</p>
+            <h2>发布信息</h2>
+          </div>
+          <span class="pill">先选分类，再填写信息</span>
+        </div>
+
+        <form class="post-form" id="postForm">
+          <div class="post-steps" aria-label="发布步骤">
+            <span class="is-active">1 上传图片</span>
+            <span>2 添加描述</span>
+            <span>3 保存或发布</span>
+          </div>
+
+          <input name="type" id="typeSelect" type="hidden" value="rental" />
+          <label>
+            上传图片，最多 6 张
+            <input name="imageFile" id="imageFileInput" type="file" accept="image/*" multiple />
+          </label>
+          <div class="image-preview-grid" id="imagePreviewGrid"></div>
+          <label>
+            图片链接备用
+            <input name="image" type="url" placeholder="可选：如果暂时不上传图片，也可以粘贴图片网址" />
+          </label>
+          <label>
+            描述
+            <textarea name="description" rows="5" required placeholder="写清楚图片里的房源或物品信息、位置、取货/看房方式。"></textarea>
+          </label>
+          <div class="form-row">
+            <label>
+              地区
+              <select name="area" required></select>
+            </label>
+          </div>
+          <label>
+            其他地区 / 小区 / 城市
+            <input name="customArea" placeholder="如果下拉没有，请填写，例如 Alexandria、McLean、Laurel" />
+          </label>
+          <label>
+            标题
+            <input name="title" maxlength="60" placeholder="可选，例如 Rockville 主卧转租，近红线地铁" />
+          </label>
+          <div class="form-row">
+            <label>
+              价格
+              <input name="price" type="number" min="0" placeholder="可选，租金或售价" />
+            </label>
+            <label>
+              分类/房型
+              <select name="category" id="categorySelect" required></select>
+            </label>
+          </div>
+          <div class="form-row rental-only">
+            <label>
+              押金
+              <input name="deposit" type="number" min="0" placeholder="例如 1000" />
+            </label>
+            <label>
+              租期
+              <select name="leaseTerm">
+                <option value="">可商议</option>
+                <option value="短租">短租</option>
+                <option value="3个月">3个月</option>
+                <option value="6个月">6个月</option>
+                <option value="12个月">12个月</option>
+                <option value="可续租">可续租</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-row rental-only">
+            <label>
+              入住时间
+              <input name="moveIn" type="date" />
+            </label>
+            <label>
+              附近
+              <input name="nearby" placeholder="Metro、学校、公司或商圈" />
+            </label>
+          </div>
+          <div class="form-row rental-only">
+            <label class="check-label">
+              <input name="furnished" type="checkbox" />
+              带家具
+            </label>
+            <label class="check-label">
+              <input name="parking" type="checkbox" />
+              有停车
+            </label>
+            <label class="check-label">
+              <input name="petAllowed" type="checkbox" />
+              可养宠物
+            </label>
+          </div>
+          <div class="form-row rental-only">
+            <label>
+              房源位置
+              <input name="address" placeholder="例如 Twinbrook Metro / 1327 Rockville Pike" />
+            </label>
+            <label>
+              坐标
+              <input name="coordinates" placeholder="可选：39.0840,-77.1528" />
+            </label>
+          </div>
+          <div class="form-row secondhand-only">
+            <label>
+              新旧程度
+              <select name="condition">
+                <option value="">请选择</option>
+                <option value="全新">全新</option>
+                <option value="9成新">9成新</option>
+                <option value="7成新">7成新</option>
+                <option value="使用痕迹明显">使用痕迹明显</option>
+              </select>
+            </label>
+            <label>
+              取货地点
+              <input name="pickupLocation" placeholder="例如 Rockville Town Center / UMD 附近" />
+            </label>
+          </div>
+          <div class="form-row secondhand-only">
+            <label class="check-label">
+              <input name="negotiable" type="checkbox" />
+              可议价
+            </label>
+            <label class="check-label">
+              <input name="deliveryAvailable" type="checkbox" />
+              可送货
+            </label>
+          </div>
+          <label>
+            联系方式
+            <input name="contact" placeholder="可选，微信 / 手机 / 邮箱" />
+          </label>
+          <div class="post-preview" id="postPreview"></div>
+          <div class="post-submit-bar">
+            <button class="secondary-btn" id="saveDraftButton" type="button">保存草稿</button>
+            <button class="primary-btn" type="submit">发布</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="section admin-section" id="admin" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Admin</p>
+            <h2>审核台</h2>
+          </div>
+          <span class="pill" id="pendingCount">0 条待审核</span>
+        </div>
+        <div class="admin-list" id="adminList"></div>
+      </section>
+
+      <section class="section favorites-section" id="favorites" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Saved</p>
+            <h2>收藏</h2>
+          </div>
+          <button class="icon-btn" type="button" aria-label="搜索收藏">⌕</button>
+        </div>
+        <div class="content-tabs" aria-label="收藏分类">
+          <a href="#favorites">全部</a>
+          <a href="#rentals">租房</a>
+          <a href="#secondhand">二手</a>
+        </div>
+        <div class="saved-list" id="favoriteList"></div>
+      </section>
+
+      <section class="section messages-section" id="messages" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Messages</p>
+            <h2>消息</h2>
+          </div>
+          <button class="icon-btn" type="button" aria-label="搜索消息">⌕</button>
+        </div>
+        <div class="content-tabs" aria-label="消息分类">
+          <a href="#messages">全部</a>
+          <a href="#rentals">租房</a>
+          <a href="#secondhand">二手</a>
+          <a href="#messages">通知</a>
+        </div>
+        <div class="message-list" id="messageList"></div>
+      </section>
+
+      <section class="section account-section" id="account" hidden>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Profile</p>
+            <h2>我的</h2>
+          </div>
+          <span class="pill" id="accountStatus">未登录</span>
+        </div>
+        <div class="profile-card">
+          <div class="avatar">B</div>
+          <div>
+            <strong id="profileName">Barry</strong>
+            <small>DMV 华人租房二手</small>
+          </div>
+        </div>
+        <div class="profile-menu" aria-label="我的菜单">
+          <a href="#my-posts">我的发布 <span>›</span></a>
+          <a href="#drafts">草稿 <span>›</span></a>
+          <a href="#favorites">我的收藏 <span>›</span></a>
+          <a href="#history">浏览历史 <span>›</span></a>
+          <a href="#account">意见反馈 <span>›</span></a>
+          <a href="#account">帮助中心 <span>›</span></a>
+          <a href="#settings">设置 <span>›</span></a>
+        </div>
+        <div class="admin-list" id="accountList"></div>
+      </section>
+
+      <section class="section subpage-section" id="my-posts" hidden>
+        <div class="subpage-heading">
+          <a href="#account" aria-label="返回">←</a>
+          <h2>我的发布</h2>
+        </div>
+        <div class="admin-list" id="myPostList"></div>
+      </section>
+
+      <section class="section subpage-section" id="drafts" hidden>
+        <div class="subpage-heading">
+          <a href="#account" aria-label="返回">←</a>
+          <h2>草稿</h2>
+        </div>
+        <div class="admin-list" id="draftList"></div>
+      </section>
+
+      <section class="section subpage-section" id="history" hidden>
+        <div class="subpage-heading">
+          <a href="#account" aria-label="返回">←</a>
+          <h2>浏览历史</h2>
+        </div>
+        <div class="saved-list" id="historyList"></div>
+      </section>
+
+      <section class="section subpage-section" id="settings" hidden>
+        <div class="subpage-heading">
+          <a href="#account" aria-label="返回">←</a>
+          <h2>设置</h2>
+        </div>
+        <div class="settings-menu">
+          <a href="#settings">编辑个人资料 <span>›</span></a>
+          <a href="#settings">Language <span>›</span></a>
+          <a href="#settings">深色模式 <span>›</span></a>
+          <a href="#settings">用户协议 <span>›</span></a>
+          <a href="#settings">隐私政策 <span>›</span></a>
+          <a href="#settings">关于我们 <span>›</span></a>
+          <button id="logoutButton" type="button">退出登录</button>
+        </div>
+      </section>
+    </main>
+
+    <dialog class="detail-dialog" id="detailDialog">
+      <button class="close-btn" id="closeDialog" type="button" aria-label="关闭">×</button>
+      <div id="detailContent"></div>
+    </dialog>
+
+    <dialog class="login-dialog" id="loginDialog">
+      <button class="close-btn" id="closeLoginDialog" type="button" aria-label="关闭">×</button>
+      <form class="login-form" id="loginForm">
+        <p class="eyebrow">Login</p>
+        <h2>登录后发布和查看联系方式</h2>
+        <label>
+          邮箱
+          <input name="email" type="email" required placeholder="you@example.com" />
+        </label>
+        <label>
+          昵称
+          <input name="name" maxlength="24" placeholder="例如 DMV小王" />
+        </label>
+        <label>
+          密码
+          <input name="password" type="password" minlength="6" required placeholder="至少 6 位" />
+        </label>
+        <button class="primary-btn" type="submit">登录</button>
+        <div class="login-actions">
+          <button class="secondary-btn" id="registerButton" type="button">注册新账号</button>
+          <button class="text-btn" id="forgotPasswordButton" type="button">忘记密码？</button>
+        </div>
+        <p class="hint">已有账号请直接登录。忘记密码可以发送重置邮件。</p>
+      </form>
+    </dialog>
+
+    <dialog class="post-type-dialog" id="postTypeDialog">
+      <button class="close-btn" id="closePostTypeDialog" type="button" aria-label="关闭">×</button>
+      <div class="post-type-sheet">
+        <h2>发布信息</h2>
+        <p>选择你要发布的内容</p>
+        <button class="post-type-card" type="button" data-post-type-choice="rental">
+          <span>房</span>
+          <strong>房屋出租</strong>
+          <small>出租房、公寓、合租</small>
+        </button>
+        <button class="post-type-card" type="button" data-post-type-choice="secondhand">
+          <span>物</span>
+          <strong>二手物品</strong>
+          <small>家具、电器、电子产品</small>
+        </button>
+      </div>
+    </dialog>
+
+    <nav class="mobile-nav" aria-label="底部导航">
+      <a href="#home">首页</a>
+      <a href="#favorites">收藏</a>
+      <a href="#post" data-open-post>发布</a>
+      <a href="#messages">消息</a>
+      <a href="#account">我的</a>
+    </nav>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-config.js"></script>
-    <script src="app.js"></script>
+    <script src="./supabase-config.js"></script>
+    <script src="./app.js"></script>
   </body>
 </html>
