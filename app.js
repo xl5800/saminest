@@ -536,7 +536,6 @@ function allListings() {
 }
 
 function publicListings() {
-  if (isAdmin()) return adminListings();
   return sortListings(state.listings.filter((item) => listingStatus(item) === "active" && !state.bannedUsers.includes(item.ownerAccount)));
 }
 
@@ -1400,12 +1399,17 @@ function isSupabaseEmailVerified(user) {
 }
 
 function isPasswordRecoveryHash() {
-  const text = `${window.location.hash || ""}&${window.location.search || ""}`;
-  return /(^|[&#?])type=recovery(&|$)/.test(text);
+  const hash = window.location.hash || "";
+  const text = `${hash}&${window.location.search || ""}`;
+  return /(^|[&#?])type=recovery(&|$)/.test(text)
+    || hash.startsWith("#auth/reset");
 }
 
 function recoveryParams() {
-  const raw = `${window.location.hash || ""}&${window.location.search || ""}`.replace(/^#/, "");
+  const raw = [
+    (window.location.hash || "").replace(/^#/, ""),
+    (window.location.search || "").replace(/^\?/, "")
+  ].filter(Boolean).join("&");
   return new URLSearchParams(raw);
 }
 
@@ -1414,6 +1418,11 @@ async function ensureRecoverySession() {
   const { data } = await supabaseClient.auth.getSession();
   if (data?.session) return true;
   const params = recoveryParams();
+  const code = params.get("code");
+  if (code && typeof supabaseClient.auth.exchangeCodeForSession === "function") {
+    const result = await supabaseClient.auth.exchangeCodeForSession(code);
+    if (result.data?.session && !result.error) return true;
+  }
   const accessToken = params.get("access_token");
   const refreshToken = params.get("refresh_token");
   if (!accessToken || !refreshToken) return false;
@@ -1722,8 +1731,9 @@ function reportCard(report) {
 }
 
 function homeListingCard(item) {
+  const favored = state.favorites.includes(item.id);
   return `
-    <a class="home-listing" href="#listing/${item.id}">
+    <article class="home-listing" data-open-listing="${item.id}">
       <span class="home-photo-wrap">
         <img src="${item.image}" alt="${escapeHtml(item.title)}" />
         <span class="photo-count">${item.photoCount ? `图 ${item.photoCount}` : "求租"}</span>
@@ -1739,8 +1749,10 @@ function homeListingCard(item) {
           ${item.detailTags.map((tag) => `<span>${tag}</span>`).join("")}
         </span>
       </span>
-      <span class="heart">${state.favorites.includes(item.id) ? "♥" : "♡"}</span>
-    </a>
+      <button class="heart ${favored ? "active" : ""}" type="button" data-favorite="${item.id}" aria-label="${favored ? "取消收藏" : "收藏"}">
+        ${favored ? "♥" : "♡"}
+      </button>
+    </article>
   `;
 }
 
@@ -1844,14 +1856,22 @@ async function toggleFavorite(id) {
       return;
     }
     await loadFavoritesFromSupabase();
-    renderDetail(id);
+    renderFavoriteContext(id);
     return;
   }
   state.favorites = state.favorites.includes(id)
     ? state.favorites.filter((item) => item !== id)
     : [id, ...state.favorites];
   saveState();
-  renderDetail(id);
+  renderFavoriteContext(id);
+}
+
+function renderFavoriteContext(id) {
+  if ((location.hash || "").startsWith("#listing/")) {
+    renderDetail(id);
+    return;
+  }
+  route();
 }
 
 async function createConversation(listingId) {
@@ -2707,6 +2727,12 @@ document.addEventListener("click", async (event) => {
   const favorite = event.target.closest("[data-favorite]");
   if (favorite) {
     await toggleFavorite(favorite.dataset.favorite);
+    return;
+  }
+
+  const openListing = event.target.closest("[data-open-listing]");
+  if (openListing) {
+    location.hash = `#listing/${openListing.dataset.openListing}`;
     return;
   }
 
