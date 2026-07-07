@@ -3731,3 +3731,191 @@ body:not([data-page="auth"]) .home-bottom-nav {
     min-height: 100vh !important;
   }
 }
+
+/* V8 ListingCard design system */
+.home-feed,
+.listing-list,
+.manage-list {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 12px !important;
+}
+
+.listing-card,
+.listing-card.compact {
+  position: relative !important;
+  display: grid !important;
+  grid-template-columns: 136px minmax(0, 1fr) !important;
+  gap: 12px !important;
+  align-items: start !important;
+  min-width: 0 !important;
+  min-height: 126px !important;
+  padding: 10px 0 !important;
+  border: 0 !important;
+  border-bottom: 1px solid #eef0f2 !important;
+  border-radius: 0 !important;
+  background: #ffffff !important;
+  color: inherit !important;
+  box-shadow: none !important;
+  cursor: pointer !important;
+  transition: background-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease !important;
+}
+
+.listing-card:hover {
+  background: #fffaf6 !important;
+  transform: translateY(-1px);
+}
+
+.listing-card:focus-visible {
+  outline: 2px solid rgba(255, 106, 33, 0.34);
+  outline-offset: 3px;
+}
+
+.listing-media {
+  position: relative;
+  display: block;
+  width: 136px;
+  height: 106px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #e7ecef;
+}
+
+.listing-card img {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  aspect-ratio: auto !important;
+  border-radius: 0 !important;
+  object-fit: cover !important;
+}
+
+.listing-content {
+  display: grid !important;
+  align-content: start !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+  padding-right: 28px !important;
+}
+
+.listing-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.listing-title {
+  display: -webkit-box !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  color: #20272b !important;
+  font-size: 15px !important;
+  font-weight: 820 !important;
+  line-height: 1.32 !important;
+  overflow-wrap: anywhere !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+}
+
+.listing-time {
+  color: #87909b;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.price {
+  margin-top: 1px !important;
+  color: var(--home-accent) !important;
+  font-size: 16px !important;
+  font-weight: 860 !important;
+  line-height: 1.2 !important;
+}
+
+.listing-area {
+  overflow: hidden;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 680;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.listing-card .meta {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 4px !important;
+  align-items: center !important;
+  margin-top: 3px !important;
+  color: #667789 !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+}
+
+.listing-card .pill,
+.listing-card .status-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 20px !important;
+  padding: 2px 6px !important;
+  border: 0 !important;
+  border-radius: 5px !important;
+  background: #eef1ff !important;
+  color: #6370aa !important;
+  font-size: 11px !important;
+  font-weight: 720 !important;
+  line-height: 16px !important;
+  white-space: nowrap !important;
+}
+
+.listing-card .status-badge.pending {
+  background: #fff6df !important;
+  color: #a15f00 !important;
+}
+
+.listing-card .status-badge.active {
+  background: #e9f8f0 !important;
+  color: #177a45 !important;
+}
+
+.listing-card .status-badge.rejected {
+  background: #fff0eb !important;
+  color: #b23416 !important;
+}
+
+.listing-card .status-badge.expired {
+  background: #eef2f7 !important;
+  color: #64748b !important;
+}
+
+.listing-card .photo-count {
+  left: 6px;
+  bottom: 6px;
+}
+
+.listing-card .heart {
+  right: 0 !important;
+  bottom: 18px !important;
+  z-index: 2;
+}
+
+.manage-card .listing-card {
+  margin: -2px 0 0 !important;
+}
+
+@media (max-width: 390px) {
+  .listing-card,
+  .listing-card.compact {
+    grid-template-columns: 118px minmax(0, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .listing-media {
+    width: 118px;
+    height: 96px;
+  }
+}

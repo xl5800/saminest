@@ -1,4 +1,4 @@
-const STORAGE_KEY = "dmvHuarenMarketLocalV1";
+const STORAGE_KEY = "saminestLocalV1";
 const ADMIN_EMAIL = "xlw0980@gmail.com";
 
 const seedListings = [
@@ -81,7 +81,7 @@ const fallbackImages = {
 };
 
 const app = document.querySelector("#app");
-const supabaseConfig = window.DMV_SUPABASE_CONFIG || {};
+const supabaseConfig = window.SAMINEST_SUPABASE_CONFIG || {};
 const supabaseClient =
   window.supabase && supabaseConfig.url && supabaseConfig.anonKey
     ? window.supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey)
@@ -101,7 +101,7 @@ function loadState() {
 
   return {
     session: { loggedIn: false },
-    user: { name: "xlw0980", subtitle: "华聚", avatar: "B" },
+    user: { name: "xlw0980", subtitle: "Saminest", avatar: "S" },
     listings: seedListings,
     favorites: ["rent-rockville"],
     drafts: [],
@@ -113,7 +113,7 @@ function loadState() {
 
 function ensureStateDefaults() {
   state.session ||= { loggedIn: false };
-  state.user ||= { name: "xlw0980", subtitle: "华聚", avatar: "B" };
+  state.user ||= { name: "xlw0980", subtitle: "Saminest", avatar: "S" };
   state.accounts ||= {};
   if (!state.accounts["admin@dmv.test"]) {
     state.accounts["admin@dmv.test"] = { name: "管理员", password: "admin123", role: "admin", email: "admin@dmv.test" };
@@ -693,7 +693,7 @@ function renderHome() {
       </div>
 
       <div class="home-feed">
-        ${listings.length ? listings.map(homeListingCard).join("") : emptyBlock("暂时还没有帖子")}
+        ${listings.length ? listings.map((item) => listingCard(item, { favorite: true })).join("") : emptyBlock("暂时还没有帖子")}
       </div>
 
       ${bottomNav("home")}
@@ -1172,7 +1172,7 @@ function renderProfileSettings() {
         <div class="profile-editor-head">
           <div class="avatar">${escapeHtml(state.user.avatar || "华")}</div>
           <div>
-            <strong>${escapeHtml(state.user.name || "华聚用户")}</strong>
+          <strong>${escapeHtml(state.user.name || "Saminest 用户")}</strong>
             <span>${escapeHtml(state.session?.email || state.session?.account || "已登录账号")}</span>
           </div>
         </div>
@@ -1286,8 +1286,8 @@ function renderAuthPage(title = "登录后继续", returnTo = "#home", mode = "l
         ${helpLink ? `<a href="#help">帮助</a>` : `<span></span>`}
       </header>
       <section class="auth-card auth-v2-card" aria-label="账号页面">
-        <a class="auth-brand-v2" href="#home" aria-label="华聚首页">
-          <span>华聚</span>
+      <a class="auth-brand-v2" href="#home" aria-label="Saminest 首页">
+        <span>Saminest</span>
         </a>
         ${content}
       </section>
@@ -1297,7 +1297,7 @@ function renderAuthPage(title = "登录后继续", returnTo = "#home", mode = "l
   const titleBlock = (currentMode) => `
     <div class="auth-title-block">
       <h1>${escapeHtml(copy[currentMode]?.title || "欢迎回来")}</h1>
-      <p>${escapeHtml(copy[currentMode]?.desc || "登录后继续使用华聚。")}</p>
+        <p>${escapeHtml(copy[currentMode]?.desc || "登录后继续使用 Saminest。")}</p>
     </div>
   `;
 
@@ -1454,7 +1454,7 @@ function authErrorMessage(error) {
   if (!message) return "账号功能暂时不可用，请稍后再试。";
   if (/auth session missing/i.test(message)) return "请先输入注册邮箱，再设置新密码。";
   if (/invalid login credentials/i.test(message)) return "邮箱或密码不正确，请重新输入。";
-  if (/email not confirmed/i.test(message)) return "邮箱还没有验证，请先打开 noreply@saminest.com 发出的确认邮件。";
+  if (/email not confirmed/i.test(message)) return "邮箱还没有验证，请先打开系统发送的确认邮件。";
   if (/already registered|already exists|user already/i.test(message)) return "这个邮箱已经注册，请直接登录。";
   if (/token|otp|code/i.test(message)) return "账号状态已过期，请重新操作一次。";
   if (/password/i.test(message) && /six|6|weak|short/i.test(message)) return "密码至少需要 6 位。";
@@ -1484,8 +1484,8 @@ function renderAuthNotice(title, desc, returnTo = "#home", actionLabel = "返回
         <span></span>
       </header>
       <section class="auth-card auth-v2-card" aria-label="账号页面">
-        <a class="auth-brand-v2" href="#home" aria-label="华聚首页">
-          <span>华聚</span>
+    <a class="auth-brand-v2" href="#home" aria-label="Saminest 首页">
+      <span>Saminest</span>
         </a>
         <div class="auth-success-card">
           <span class="auth-success-icon">✓</span>
@@ -1505,7 +1505,7 @@ async function ensureSupabaseProfile(user, displayName = "") {
   if (!cloudReady() || !user) return null;
   const email = normalizeAuthEmail(user.email);
   const role = email === ADMIN_EMAIL ? "admin" : "user";
-  const fallbackName = displayName || user.user_metadata?.display_name || user.user_metadata?.name || email.split("@")[0] || "华聚用户";
+  const fallbackName = displayName || user.user_metadata?.display_name || user.user_metadata?.name || email.split("@")[0] || "Saminest 用户";
   const payload = {
     id: user.id,
     email,
@@ -1532,14 +1532,14 @@ async function completeSupabaseAuth(user, returnTo = "#home", displayName = "") 
     saveState();
     renderAuthNotice(
       "请先验证邮箱",
-      "确认邮件会从 noreply@saminest.com 发出。请点击邮件里的确认链接后再登录。",
+      "请点击系统发送的确认链接后再登录。发件邮箱由 Supabase SMTP 设置控制。",
       returnTo
     );
     return;
   }
   const email = normalizeAuthEmail(user.email);
   const profile = await ensureSupabaseProfile(user, displayName);
-  const userName = profile?.display_name || displayName || user.user_metadata?.display_name || user.user_metadata?.name || (email ? email.split("@")[0] : "华聚用户");
+  const userName = profile?.display_name || displayName || user.user_metadata?.display_name || user.user_metadata?.name || (email ? email.split("@")[0] : "Saminest 用户");
   completeAuth(email || user.id, {
     name: userName,
     email,
@@ -1571,7 +1571,7 @@ async function syncSupabaseSession() {
 }
 
 function completeAuth(account, savedAccount, returnTo) {
-  const userName = savedAccount?.name || `用户${String(account).slice(-4)}` || "华聚用户";
+  const userName = savedAccount?.name || `用户${String(account).slice(-4)}` || "Saminest 用户";
   const role = savedAccount?.role || (String(account).toLowerCase().includes("admin") ? "admin" : "user");
   state.session = {
     loggedIn: true,
@@ -1583,7 +1583,7 @@ function completeAuth(account, savedAccount, returnTo) {
   };
   state.user = {
     name: userName,
-    subtitle: savedAccount?.subtitle || "华聚",
+      subtitle: savedAccount?.subtitle || "Saminest",
     avatar: (userName || account || "D").slice(0, 1).toUpperCase()
   };
   saveState();
@@ -1594,7 +1594,7 @@ function completeAuth(account, savedAccount, returnTo) {
 function mobileHeader() {
   return `
     <header class="home-header">
-      <a class="home-logo" href="#home"><b>华聚</b></a>
+      <a class="home-logo" href="#home"><b>Saminest</b></a>
     </header>
   `;
 }
@@ -1622,34 +1622,42 @@ function bottomNav(active) {
   `;
 }
 
-function listingCard(item) {
+function listingCard(item, options = {}) {
+  const favored = state.favorites.includes(item.id);
+  const tags = (item.detailTags?.length ? item.detailTags : item.tags || []).slice(0, 3);
+  const status = listingStatus(item);
+  const showStatus = Boolean(options.status);
   return `
-    <a class="listing-card" href="#listing/${item.id}">
-      <img src="${item.image}" alt="${escapeHtml(item.title)}" />
+    <article class="listing-card ${options.compact ? "compact" : ""}" data-open-listing="${item.id}">
+      <span class="listing-media">
+        <img src="${item.image}" alt="${escapeHtml(item.title)}" />
+        <span class="photo-count">${item.photoCount ? `图 ${item.photoCount}` : typeLabel(item.type)}</span>
+      </span>
       <span class="listing-content">
-        <span class="listing-title">${item.title}</span>
+        <span class="listing-row">
+          <span class="listing-title">${escapeHtml(item.title)}</span>
+          <span class="listing-time">${item.time}</span>
+        </span>
         <span class="price">${item.price}</span>
+        <span class="listing-area">位置 ${escapeHtml(item.area)}</span>
         <span class="meta">
-          <span>${item.area}</span>
-          <span>${item.time}</span>
-          ${item.tags.slice(0, 2).map((tag) => `<span class="pill">${tag}</span>`).join("")}
+          ${showStatus ? `<span class="status-badge ${status}">${statusLabel(status)}</span>` : ""}
+          ${tags.map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("")}
         </span>
       </span>
-    </a>
+      ${options.favorite ? `
+        <button class="heart ${favored ? "active" : ""}" type="button" data-favorite="${item.id}" aria-label="${favored ? "取消收藏" : "收藏"}">
+          ${favored ? "♥" : "♡"}
+        </button>
+      ` : ""}
+    </article>
   `;
 }
 
 function manageListingCard(item) {
   return `
     <article class="manage-card">
-      <a class="listing-card compact" href="#listing/${item.id}">
-        <img src="${item.image}" alt="${escapeHtml(item.title)}" />
-        <span class="listing-content">
-          <span class="listing-title">${item.title}</span>
-          <span class="price">${item.price}</span>
-          <span class="meta"><span class="status-badge ${listingStatus(item)}">${statusLabel(listingStatus(item))}</span><span>${item.area}</span><span>${typeLabel(item.type)}</span></span>
-        </span>
-      </a>
+      ${listingCard(item, { compact: true, status: true })}
       <div class="manage-actions">
         <a class="secondary-button" href="#listing/${item.id}">查看</a>
         <button class="secondary-button" type="button" data-edit-listing="${item.id}">编辑</button>
@@ -1726,32 +1734,6 @@ function reportCard(report) {
       <div class="admin-actions">
         ${item ? `<a class="secondary-button" href="#listing/${item.id}">查看帖子</a>` : ""}
       </div>
-    </article>
-  `;
-}
-
-function homeListingCard(item) {
-  const favored = state.favorites.includes(item.id);
-  return `
-    <article class="home-listing" data-open-listing="${item.id}">
-      <span class="home-photo-wrap">
-        <img src="${item.image}" alt="${escapeHtml(item.title)}" />
-        <span class="photo-count">${item.photoCount ? `图 ${item.photoCount}` : "求租"}</span>
-      </span>
-      <span class="home-listing-body">
-        <span class="home-row">
-          <span class="home-title">${item.title}</span>
-          <span class="home-time">${item.time}</span>
-        </span>
-        <span class="home-price">${item.price}</span>
-        <span class="home-area">位置 ${item.area}</span>
-        <span class="tag-row">
-          ${item.detailTags.map((tag) => `<span>${tag}</span>`).join("")}
-        </span>
-      </span>
-      <button class="heart ${favored ? "active" : ""}" type="button" data-favorite="${item.id}" aria-label="${favored ? "取消收藏" : "收藏"}">
-        ${favored ? "♥" : "♡"}
-      </button>
     </article>
   `;
 }
@@ -1963,7 +1945,7 @@ async function submitListing(form, type) {
     type,
     title: cleanOr(data.title, defaultTitle(type)),
     price: cleanOr(data.price, defaultPrice(type)),
-    area: cleanOr(data.area, "DMV 地区"),
+    area: cleanOr(data.area, "本地地区"),
     time: existing?.time || "刚刚",
     tags,
     detailTags,
@@ -2390,7 +2372,7 @@ async function sendMessage(form, conversationId) {
 async function saveProfileSettings(form) {
   const data = Object.fromEntries(new FormData(form).entries());
   const name = String(data.name || "").trim();
-  const subtitle = String(data.subtitle || "").trim() || "华聚";
+  const subtitle = String(data.subtitle || "").trim() || "Saminest";
   if (!name) {
     window.alert("请填写用户昵称。");
     return;
@@ -2551,7 +2533,7 @@ document.addEventListener("submit", async (event) => {
         }
         renderAuthNotice(
           "请验证邮箱",
-          "确认邮件会从 noreply@saminest.com 发出。请点击邮件里的确认链接后再回来登录。",
+            "请点击系统发送的确认链接后再回来登录。发件邮箱由 Supabase SMTP 设置控制。",
           returnTo
         );
         return;
