@@ -81,7 +81,7 @@ const fallbackImages = {
 };
 
 const app = document.querySelector("#app");
-const supabaseConfig = window.SAMINEST_SUPABASE_CONFIG || {};
+const supabaseConfig = window.SAMINEST_SUPABASE_CONFIG || window.DMV_SUPABASE_CONFIG || {};
 const supabaseClient =
   window.supabase && supabaseConfig.url && supabaseConfig.anonKey
     ? window.supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey)
@@ -2481,6 +2481,10 @@ document.addEventListener("submit", async (event) => {
           return;
         }
         await completeSupabaseAuth(authData.user, returnTo);
+        return;
+      }
+      if (isPasswordRecoveryHash()) {
+        showAuthError(authForm, "重置链接已打开，但云端登录配置没有加载成功。请刷新页面后再试。");
         return;
       }
       const account = localAccountForEmail(email);
