@@ -1,4 +1,4 @@
--- DMV Huaren Market complete Supabase setup
+-- Saminest complete Supabase setup
 -- Use this file if the first setup stopped halfway.
 -- It is safe to run multiple times on a new/empty project.
 

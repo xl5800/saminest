@@ -1,4 +1,4 @@
--- DMV Huaren Market minimum working Supabase setup
+-- Saminest minimum working Supabase setup
 -- Use this if the full setup keeps failing.
 -- This version avoids custom functions and triggers.
 

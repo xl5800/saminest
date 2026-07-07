@@ -1,0 +1,4 @@
+_backup_before_ui_replace_20260625_225258/
+.env
+.env.*
+*.local

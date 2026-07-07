@@ -1,4 +1,4 @@
--- DMV 华人市场：消息表 + 基础 RLS 权限
+-- Saminest: messaging tables and baseline RLS policies
 -- 在 Supabase Dashboard -> SQL Editor 运行一次。
 -- 管理员邮箱：xlw0980@gmail.com
 

@@ -1387,6 +1387,7 @@ function hasSupabaseAuth() {
 }
 
 function authRedirectUrl(mode = "reset") {
+  if (mode === "reset") return `${window.location.origin}${window.location.pathname}?auth=reset`;
   return `${window.location.origin}${window.location.pathname}#auth/${mode}`;
 }
 
@@ -1402,14 +1403,17 @@ function isPasswordRecoveryHash() {
   const hash = window.location.hash || "";
   const text = `${hash}&${window.location.search || ""}`;
   return /(^|[&#?])type=recovery(&|$)/.test(text)
+    || /(^|[&#?])auth=reset(&|$)/.test(text)
     || hash.startsWith("#auth/reset");
 }
 
 function recoveryParams() {
-  const raw = [
-    (window.location.hash || "").replace(/^#/, ""),
-    (window.location.search || "").replace(/^\?/, "")
-  ].filter(Boolean).join("&");
+  const hash = (window.location.hash || "").replace(/^#/, "");
+  const search = (window.location.search || "").replace(/^\?/, "");
+  const hashQueryIndex = hash.indexOf("?");
+  const hashQuery = hashQueryIndex >= 0 ? hash.slice(hashQueryIndex + 1) : "";
+  const hashRouteParams = hash.replace(/^auth\/reset[?&]?/, "");
+  const raw = [search, hash, hashQuery, hashRouteParams].filter(Boolean).join("&");
   return new URLSearchParams(raw);
 }
 
@@ -2483,10 +2487,6 @@ document.addEventListener("submit", async (event) => {
         await completeSupabaseAuth(authData.user, returnTo);
         return;
       }
-      if (isPasswordRecoveryHash()) {
-        showAuthError(authForm, "重置链接已打开，但云端登录配置没有加载成功。请刷新页面后再试。");
-        return;
-      }
       const account = localAccountForEmail(email);
       if (!account || account.password !== password) {
         showAuthError(authForm, "邮箱或密码不正确，请重新输入。");
@@ -2628,6 +2628,10 @@ document.addEventListener("submit", async (event) => {
         state.session = { loggedIn: false };
         saveState();
         renderAuthPage("修改成功", returnTo, "success");
+        return;
+      }
+      if (isPasswordRecoveryHash()) {
+        showAuthError(authForm, "重置链接已打开，但云端登录配置没有加载成功。请刷新页面后再试。");
         return;
       }
       const account = localAccountForEmail(email);

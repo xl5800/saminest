@@ -1,4 +1,4 @@
--- DMV Huaren Market database schema for Supabase
+-- Saminest database schema for Supabase
 -- Run this file in Supabase SQL Editor.
 
 create extension if not exists "pgcrypto";

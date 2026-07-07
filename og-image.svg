@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="Saminest">
+  <rect width="1200" height="630" fill="#fff7f1"/>
+  <rect x="80" y="80" width="1040" height="470" rx="36" fill="#ffffff"/>
+  <circle cx="172" cy="172" r="46" fill="#ff6a21"/>
+  <text x="172" y="190" text-anchor="middle" font-family="Arial, sans-serif" font-size="48" font-weight="700" fill="#ffffff">S</text>
+  <text x="246" y="186" font-family="Arial, 'Microsoft YaHei', sans-serif" font-size="58" font-weight="800" fill="#061832">Saminest</text>
+  <text x="246" y="258" font-family="Arial, 'Microsoft YaHei', sans-serif" font-size="34" font-weight="600" fill="#485568">DMV 华语租房、求租、二手与本地信息</text>
+  <rect x="246" y="326" width="700" height="70" rx="20" fill="#fff0e7"/>
+  <text x="282" y="371" font-family="Arial, 'Microsoft YaHei', sans-serif" font-size="28" font-weight="700" fill="#d84e0c">发布、收藏、站内消息、举报与审核</text>
+  <text x="246" y="466" font-family="Arial, 'Microsoft YaHei', sans-serif" font-size="28" font-weight="600" fill="#7b8794">www.saminest.com</text>
+</svg>
