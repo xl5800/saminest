@@ -119,6 +119,7 @@ function ensureStateDefaults() {
     state.accounts["admin@dmv.test"] = { name: "管理员", password: "admin123", role: "admin", email: "admin@dmv.test" };
   }
   state.reports ||= [];
+  state.messageReads ||= {};
   state.bannedUsers ||= [];
   state.listings ||= seedListings;
   state.listings = state.listings.map((item) => {
@@ -568,7 +569,7 @@ function route() {
   if (requiresAuth(page) && !isLoggedIn()) {
     return renderAuthPage(authTitle(page), `#${hash}`, "login");
   }
-  if ((page === "admin-review" || page === "admin-feedback") && !isAdmin()) {
+  if ((page === "admin-review" || page === "admin-feedback" || page === "admin-reports") && !isAdmin()) {
     return renderNoAccess();
   }
 
@@ -591,6 +592,7 @@ function route() {
   if (page === "admin-reports") return renderAdminReports();
   if (page === "help") return renderHelp();
   if (page === "settings") return renderSettings();
+  if (page === "settings-profile") return renderProfileSettings();
   if (page === "admin-review") return renderAdminReview(id || "pending");
   renderHome();
 }
@@ -609,8 +611,10 @@ function requiresAuth(page) {
     "favorites",
     "feedback",
     "settings",
+    "settings-profile",
     "admin-review",
-    "admin-feedback"
+    "admin-feedback",
+    "admin-reports"
   ].includes(page);
 }
 
@@ -665,7 +669,8 @@ function authTitle(page) {
       feedback: "登录后提交意见反馈",
       settings: "登录后进入设置",
       "admin-review": "管理员登录后审核内容",
-      "admin-feedback": "管理员登录后查看反馈"
+      "admin-feedback": "管理员登录后查看反馈",
+      "admin-reports": "管理员登录后查看举报"
     }[page] || "登录后继续"
   );
 }
@@ -977,6 +982,7 @@ function renderMessages() {
 function renderConversation(id) {
   const conversation = state.conversations.find((item) => item.id === id) || state.conversations[0];
   if (!conversation) return renderMessages();
+  markConversationRead(conversation.id);
   const messageHtml = conversation.messages.map((message, index) => {
     const isObject = typeof message === "object" && message !== null;
     const text = isObject ? message.content : message;
@@ -996,6 +1002,40 @@ function renderConversation(id) {
       </form>
     </section>
   `;
+}
+
+function messageCreatedAt(message, fallback = Date.now()) {
+  if (typeof message === "object" && message !== null) {
+    return new Date(message.createdAt || message.created_at || fallback).getTime();
+  }
+  return fallback;
+}
+
+function isMessageFromMe(message, index = 0) {
+  if (typeof message === "object" && message !== null) {
+    const selfIds = [currentUserId(), state.session?.account, state.session?.email].filter(Boolean);
+    return selfIds.includes(message.senderId) || selfIds.includes(message.sender_id);
+  }
+  return index % 2 === 0;
+}
+
+function conversationUnreadCount(conversation) {
+  if (!isLoggedIn() || !conversation) return 0;
+  const lastReadAt = Number(state.messageReads?.[conversation.id] || 0);
+  return (conversation.messages || []).filter((message, index) => {
+    return !isMessageFromMe(message, index) && messageCreatedAt(message) > lastReadAt;
+  }).length;
+}
+
+function unreadMessageCount() {
+  return state.conversations.reduce((count, conversation) => count + conversationUnreadCount(conversation), 0);
+}
+
+function markConversationRead(id) {
+  if (!id) return;
+  state.messageReads ||= {};
+  state.messageReads[id] = Date.now();
+  saveState();
 }
 
 function renderSavedList(title, entries, emptyText) {
@@ -1115,12 +1155,34 @@ function renderSettings() {
       ${pageHeader("设置")}
       <section class="subpage-card">
         <div class="subpage-list">
-          <a href="#me">账号资料<span>${state.user.name}</span></a>
+          <a href="#settings-profile">账号资料<span>${state.user.name}</span></a>
           <a href="#messages">消息通知<span>已开启</span></a>
           <a href="#home">清除演示数据<span data-reset>重置</span></a>
         </div>
         <button class="logout-button" type="button" data-logout>退出登录</button>
       </section>
+    </section>
+  `;
+}
+
+function renderProfileSettings() {
+  app.innerHTML = `
+    <section class="page-screen">
+      ${pageHeader("账号资料")}
+      <form class="subpage-card profile-settings-form" data-profile-form>
+        <div class="profile-editor-head">
+          <div class="avatar">${escapeHtml(state.user.avatar || "华")}</div>
+          <div>
+            <strong>${escapeHtml(state.user.name || "华聚用户")}</strong>
+            <span>${escapeHtml(state.session?.email || state.session?.account || "已登录账号")}</span>
+          </div>
+        </div>
+        <div class="field-grid">
+          ${inputField("name", "用户昵称", "例如 Rockville 小陈", true, state.user.name || "")}
+          ${inputField("subtitle", "个人说明", "例如 DMV 华人租房二手", false, state.user.subtitle || "")}
+        </div>
+        <button class="primary-button" type="submit">保存资料</button>
+      </form>
     </section>
   `;
 }
@@ -1210,7 +1272,7 @@ function renderAuthPage(title = "登录后继续", returnTo = "#home", mode = "l
     },
     forgot: {
       title: "找回密码",
-      desc: "云端账号不能跳过身份验证直接改密码；如忘记密码，请联系管理员重置。"
+      desc: "输入注册邮箱后，我们会发送验证邮件。点击邮件里的链接后即可设置新密码。"
     },
     reset: {
       title: "设置新密码",
@@ -1270,7 +1332,7 @@ function renderAuthPage(title = "登录后继续", returnTo = "#home", mode = "l
       <form class="auth-v2-form" data-auth-form data-auth-action="forgot">
         <input type="hidden" name="returnTo" value="${escapeHtml(safeReturnTo)}" />
         <label class="auth-input"><span>邮箱</span><div><em>@</em><input name="email" type="email" autocomplete="email" placeholder="请输入注册邮箱" required /></div></label>
-        <button class="primary-button auth-v2-submit" type="submit">继续</button>
+        <button class="primary-button auth-v2-submit" type="submit">发送验证邮件</button>
         <p class="auth-switch">想起来了？<button type="button" data-auth-screen="login">返回登录</button></p>
       </form>
     `);
@@ -1512,7 +1574,7 @@ function completeAuth(account, savedAccount, returnTo) {
   };
   state.user = {
     name: userName,
-    subtitle: "华聚",
+    subtitle: savedAccount?.subtitle || "华聚",
     avatar: (userName || account || "D").slice(0, 1).toUpperCase()
   };
   saveState();
@@ -1539,7 +1601,7 @@ function pageHeader(title) {
 }
 
 function bottomNav(active) {
-  const messageCount = isLoggedIn() ? state.conversations.length : 0;
+  const messageCount = unreadMessageCount();
   return `
     <nav class="home-bottom-nav" aria-label="底部导航">
       <a class="${active === "home" ? "active" : ""}" href="#home"><span>⌂</span>首页</a>
@@ -1683,14 +1745,18 @@ function homeListingCard(item) {
 }
 
 function conversationItem(item) {
+  const unreadCount = conversationUnreadCount(item);
   return `
-    <a class="message-item" href="#conversation/${item.id}">
+    <a class="message-item ${unreadCount ? "has-unread" : ""}" href="#conversation/${item.id}">
       <span class="message-avatar">${item.avatar}</span>
       <span class="message-body">
         <b>${item.name}</b>
         <small>${item.lastMessage}</small>
       </span>
-      <time>${item.time}</time>
+      <span class="message-side">
+        <time>${item.time}</time>
+        ${unreadCount ? `<em>${unreadCount}</em>` : ""}
+      </span>
     </a>
   `;
 }
@@ -2290,11 +2356,57 @@ async function sendMessage(form, conversationId) {
     return;
   }
   const conversation = state.conversations.find((item) => item.id === conversationId);
-  conversation.messages.push(text);
+  conversation.messages.push({
+    senderId: currentUserId() || state.session?.account || "me",
+    content: text,
+    createdAt: new Date().toISOString()
+  });
   conversation.lastMessage = text;
   conversation.time = "刚刚";
   saveState();
   renderConversation(conversationId);
+}
+
+async function saveProfileSettings(form) {
+  const data = Object.fromEntries(new FormData(form).entries());
+  const name = String(data.name || "").trim();
+  const subtitle = String(data.subtitle || "").trim() || "华聚";
+  if (!name) {
+    window.alert("请填写用户昵称。");
+    return;
+  }
+
+  if (cloudReady() && currentUserId()) {
+    const { error: authError } = await supabaseClient.auth.updateUser({
+      data: { display_name: name, name }
+    });
+    if (authError) {
+      window.alert(`资料保存失败：${authErrorMessage(authError)}`);
+      return;
+    }
+    const { error: profileError } = await supabaseClient
+      .from("profiles")
+      .update({ display_name: name })
+      .eq("id", currentUserId());
+    if (profileError) {
+      window.alert(`昵称保存失败：${authErrorMessage(profileError)}`);
+      return;
+    }
+  }
+
+  const accountKey = normalizeAuthEmail(state.session?.email || state.session?.account || "");
+  if (accountKey && state.accounts?.[accountKey]) {
+    state.accounts[accountKey] = { ...state.accounts[accountKey], name, subtitle };
+  }
+  state.user = {
+    ...state.user,
+    name,
+    subtitle,
+    avatar: name.slice(0, 1).toUpperCase()
+  };
+  saveState();
+  window.alert("账号资料已保存。");
+  renderSettings();
 }
 
 function escapeHtml(value) {
@@ -2452,10 +2564,21 @@ document.addEventListener("submit", async (event) => {
         return;
       }
       if (cloudReady()) {
+        setAuthLoading(authForm, true, "正在发送...");
+        const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+          redirectTo: authRedirectUrl("reset")
+        });
+        setAuthLoading(authForm, false);
+        if (error) {
+          showAuthError(authForm, authErrorMessage(error));
+          return;
+        }
         renderAuthNotice(
-          "暂不支持直接重置",
-          "为了避免别人输入你的邮箱就改掉密码，云端账号不能跳过身份验证直接重置。请联系管理员处理，或用新邮箱重新注册。",
-          returnTo
+          "请验证邮箱",
+          "我们已发送密码重置邮件。请打开邮箱里的链接，验证完成后会进入更改密码页面。",
+          returnTo,
+          "返回登录",
+          "login"
         );
         return;
       }
@@ -2521,6 +2644,13 @@ document.addEventListener("submit", async (event) => {
     event.preventDefault();
     const query = new FormData(searchForm).get("q") || "";
     renderCategory("all", String(query));
+    return;
+  }
+
+  const profileForm = event.target.closest("[data-profile-form]");
+  if (profileForm) {
+    event.preventDefault();
+    await saveProfileSettings(profileForm);
     return;
   }
 

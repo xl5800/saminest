@@ -1198,10 +1198,57 @@ body[data-page="home"] .app-main {
 }
 
 .message-item time {
-  align-self: start;
   color: var(--faint);
   font-size: 12px;
   white-space: nowrap;
+}
+
+.message-side {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  align-self: start;
+}
+
+.message-side em {
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #ff3e3e;
+  color: #fff;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.message-item.has-unread .message-body b {
+  font-weight: 950;
+}
+
+.profile-settings-form {
+  display: grid;
+  gap: 16px;
+}
+
+.profile-editor-head {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.profile-editor-head strong,
+.profile-editor-head span {
+  display: block;
+}
+
+.profile-editor-head span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .chat-panel {
