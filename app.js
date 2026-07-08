@@ -1,4 +1,4 @@
-const STORAGE_KEY = "saminestLocalV1";
+﻿const STORAGE_KEY = "saminestLocalV1";
 const ADMIN_EMAIL = "xlw0980@gmail.com";
 
 const seedListings = [
@@ -243,7 +243,7 @@ function dbListingToUi(row, profileMap = {}, imageMap = {}) {
     .filter(Boolean);
   const ownerProfile = profileMap[row.user_id] || {};
   const ownerName = ownerProfile.display_name || ownerProfile.email || "发布者";
-  const images = imageMap[row.id]?.length ? imageMap[row.id] : normalizeImages(row.image_url);
+  const images = [...new Set([...(imageMap[row.id] || []), ...normalizeImages(row.image_url)])];
   return {
     id: row.id,
     type,
@@ -282,7 +282,7 @@ function uiListingToDb(listing) {
     category: listing.type === "wanted" ? "wanted" : listing.tags?.[0] || typeLabel(listing.type),
     move_in: normalizeDateValue(listing.moveIn),
     nearby: Array.isArray(listing.tags) ? listing.tags.join(", ") : "",
-    image_url: images[0] || listing.image || null,
+    image_url: images.length > 1 ? JSON.stringify(images) : images[0] || listing.image || null,
     contact: listing.contact || "站内消息"
   };
 }
@@ -743,6 +743,7 @@ function renderDetail(id) {
       <div class="detail-layout">
         <div class="detail-gallery">
           ${galleryImages.map((src, index) => `<img class="detail-photo ${index ? "secondary" : ""}" src="${escapeHtml(src)}" alt="${escapeHtml(item.title)} 图片 ${index + 1}" />`).join("")}
+          ${galleryImages.length > 1 ? `<span class="detail-gallery-count">共 ${galleryImages.length} 张图片</span>` : ""}
         </div>
         <article class="detail-panel">
           <div class="detail-title-row">
@@ -1631,11 +1632,14 @@ function listingCard(item, options = {}) {
   const tags = (item.detailTags?.length ? item.detailTags : item.tags || []).slice(0, 3);
   const status = listingStatus(item);
   const showStatus = Boolean(options.status);
+  const images = listingImages(item);
+  const imageCount = images.length || item.photoCount || 0;
+  const coverImage = images[0] || item.image || fallbackImages[item.type] || fallbackImages.used;
   return `
     <article class="listing-card ${options.compact ? "compact" : ""}" data-open-listing="${item.id}">
       <span class="listing-media">
-        <img src="${item.image}" alt="${escapeHtml(item.title)}" />
-        <span class="photo-count">${item.photoCount ? `图 ${item.photoCount}` : typeLabel(item.type)}</span>
+        <img src="${escapeHtml(coverImage)}" alt="${escapeHtml(item.title)}" />
+        <span class="photo-count">${imageCount ? `图 ${imageCount}` : typeLabel(item.type)}</span>
       </span>
       <span class="listing-content">
         <span class="listing-row">
@@ -1689,13 +1693,15 @@ function manageDraftCard(draft) {
 }
 
 function adminReviewCard(item) {
+  const images = listingImages(item);
+  const coverImage = images[0] || item.image || fallbackImages[item.type] || fallbackImages.used;
   return `
     <article class="admin-card">
       <label class="admin-select">
         <input type="checkbox" data-admin-select value="${item.id}" />
         <span>选择</span>
       </label>
-      <img src="${item.image}" alt="${escapeHtml(item.title)}" />
+      <img src="${escapeHtml(coverImage)}" alt="${escapeHtml(item.title)}" />
       <div class="admin-card-body">
         <div class="admin-card-head">
           <b>${escapeHtml(item.title)}</b>
@@ -2883,3 +2889,4 @@ window.addEventListener("DOMContentLoaded", async () => {
   await refreshCloudData();
   route();
 });
+
