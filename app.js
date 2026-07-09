@@ -284,9 +284,9 @@ function uiListingToDb(listing) {
     description: listing.desc || "暂无详细描述。",
     price: parsePriceNumber(listing.price),
     area: listing.area,
-    category: listing.type === "wanted" ? "wanted" : listing.tags?.[0] || typeLabel(listing.type),
+    category: listing.type === "wanted" ? "wanted" : listing.roomType || listing.tags?.[0] || typeLabel(listing.type),
     move_in: normalizeDateValue(listing.moveIn),
-    nearby: Array.isArray(listing.tags) ? listing.tags.join(", ") : "",
+    nearby: Array.isArray(listing.tags) ? [...new Set([listing.roomType, listing.moveIn, ...listing.tags].filter(Boolean))].join(", ") : "",
     image_url: images.length > 1 ? JSON.stringify(images) : images[0] || listing.image || null,
     contact: listing.contact || "站内消息"
   };
@@ -708,14 +708,21 @@ function renderHome() {
   `;
 }
 
-function renderCategory(type, query = "") {
+function renderCategory(type, query = "", filters = {}) {
   const currentType = ["rent", "wanted", "used", "all"].includes(type) ? type : "all";
   const lowerQuery = query.trim().toLowerCase();
-  const shown = publicListings().filter((item) => {
+  const activeFilters = {
+    price: filters.price || "any",
+    roomType: filters.roomType || "any",
+    moveIn: filters.moveIn || "any",
+    sort: filters.sort || "newest"
+  };
+  const filtered = publicListings().filter((item) => {
     const matchesType = currentType === "all" || item.type === currentType;
     const text = `${item.title} ${item.area} ${item.price} ${item.desc} ${(item.tags || []).join(" ")} ${(item.detailTags || []).join(" ")}`.toLowerCase();
-    return matchesType && (!lowerQuery || text.includes(lowerQuery));
+    return matchesType && (!lowerQuery || text.includes(lowerQuery)) && matchesRentFilters(item, activeFilters, currentType);
   });
+  const shown = sortCategoryListings(filtered, activeFilters.sort);
   const isRent = currentType === "rent";
   const title = currentType === "all" ? "推荐" : categoryName(currentType);
 
@@ -728,7 +735,7 @@ function renderCategory(type, query = "") {
         <input type="hidden" name="type" value="${currentType}" />
         <input name="q" value="${escapeHtml(query)}" placeholder="搜索关键词或地区" />
       </form>
-      ${isRent ? FilterBar() : ""}
+      ${isRent ? FilterBar(activeFilters) : ""}
       <div class="${isRent ? "housing-list" : "listing-list masonry-feed category-masonry-feed"}">
         ${shown.length ? shown.map((item) => isRent ? HousingListCard(item) : MasonryCard(item, { favorite: true })).join("") : emptyBlock("没有找到相关帖子")}
       </div>
@@ -751,16 +758,47 @@ function CategoryTabs(active = "home") {
   `;
 }
 
-function FilterBar() {
+function FilterBar(filters = {}) {
   return `
-    <section class="filter-bar" aria-label="租房筛选">
-      <label>地区<select><option>全部地区</option><option>Rockville</option><option>Bethesda</option><option>Arlington</option></select></label>
-      <label>价格<select><option>不限价格</option><option>$800 以下</option><option>$800-$1200</option><option>$1200 以上</option></select></label>
-      <label>房型<select><option>全部房型</option><option>单间</option><option>主卧</option><option>整租</option><option>合租</option></select></label>
-      <label>入住<select><option>任意时间</option><option>可立即入住</option><option>一周内</option><option>下个月</option></select></label>
-      <label>排序<select><option>最新发布</option><option>租金从低到高</option><option>租金从高到低</option></select></label>
+    <section class="filter-bar" aria-label="租房筛选" data-rent-filters>
+      <label>价格<select name="price"><option value="any" ${selectedFilter(filters.price, "any")}>不限价格</option><option value="under800" ${selectedFilter(filters.price, "under800")}>$800 以下</option><option value="800-1200" ${selectedFilter(filters.price, "800-1200")}>$800-$1200</option><option value="over1200" ${selectedFilter(filters.price, "over1200")}>$1200 以上</option></select></label>
+      <label>房型<select name="roomType"><option value="any" ${selectedFilter(filters.roomType, "any")}>全部房型</option><option value="单间" ${selectedFilter(filters.roomType, "单间")}>单间</option><option value="主卧" ${selectedFilter(filters.roomType, "主卧")}>主卧</option><option value="整租" ${selectedFilter(filters.roomType, "整租")}>整租</option><option value="合租" ${selectedFilter(filters.roomType, "合租")}>合租</option></select></label>
+      <label>入住<select name="moveIn"><option value="any" ${selectedFilter(filters.moveIn, "any")}>任意时间</option><option value="可立即入住" ${selectedFilter(filters.moveIn, "可立即入住")}>可立即入住</option><option value="一周内" ${selectedFilter(filters.moveIn, "一周内")}>一周内</option><option value="下个月" ${selectedFilter(filters.moveIn, "下个月")}>下个月</option></select></label>
+      <label>排序<select name="sort"><option value="newest" ${selectedFilter(filters.sort, "newest")}>最新发布</option><option value="priceAsc" ${selectedFilter(filters.sort, "priceAsc")}>租金从低到高</option><option value="priceDesc" ${selectedFilter(filters.sort, "priceDesc")}>租金从高到低</option></select></label>
     </section>
   `;
+}
+
+function selectedFilter(current, value) {
+  return (current || "any") === value ? "selected" : "";
+}
+
+function matchesRentFilters(item, filters, currentType) {
+  if (currentType !== "rent") return true;
+  const price = parsePriceNumber(item.price);
+  if (filters.price === "under800" && (!price || price >= 800)) return false;
+  if (filters.price === "800-1200" && (!price || price < 800 || price > 1200)) return false;
+  if (filters.price === "over1200" && (!price || price <= 1200)) return false;
+  const roomText = `${item.roomType || ""} ${(item.tags || []).join(" ")} ${(item.detailTags || []).join(" ")}`;
+  if (filters.roomType !== "any" && !roomText.includes(filters.roomType)) return false;
+  const moveInText = `${item.moveIn || ""} ${(item.tags || []).join(" ")} ${(item.detailTags || []).join(" ")}`;
+  if (filters.moveIn !== "any" && !moveInText.includes(filters.moveIn)) return false;
+  return true;
+}
+
+function sortCategoryListings(listings, sort = "newest") {
+  if (sort === "priceAsc") return [...listings].sort((a, b) => parsePriceNumber(a.price) - parsePriceNumber(b.price));
+  if (sort === "priceDesc") return [...listings].sort((a, b) => parsePriceNumber(b.price) - parsePriceNumber(a.price));
+  return listings;
+}
+
+function currentRentFilters() {
+  const filterBar = document.querySelector("[data-rent-filters]");
+  if (!filterBar) return {};
+  return [...filterBar.querySelectorAll("select[name]")].reduce((filters, select) => {
+    filters[select.name] = select.value;
+    return filters;
+  }, {});
 }
 
 function renderDetail(id) {
@@ -1786,8 +1824,9 @@ function listingMetricSeed(item, salt = 0) {
 }
 
 function listingFavoriteCount(item) {
-  const base = Number(item?.favoriteCount || item?.likes || 8 + (listingMetricSeed(item, 31) % 96));
-  return state.favorites.includes(item.id) ? base + 1 : base;
+  const persisted = Number(item?.favoriteCount || item?.likes || 0);
+  const localFavorite = state.favorites.includes(item.id) ? 1 : 0;
+  return Math.max(persisted, localFavorite);
 }
 
 function formatMetric(value) {
@@ -1842,7 +1881,7 @@ function HousingListCard(item) {
   return `
     <article class="housing-list-card" data-open-listing="${item.id}">
       <span class="housing-media">
-        <img src="${escapeHtml(coverImage)}" alt="${escapeHtml(item.title)}" loading="lazy" />
+        <img src="${escapeHtml(coverImage)}" alt="${escapeHtml(item.title)}" loading="lazy" onerror="this.closest('.housing-media').classList.add('is-empty'); this.remove();" />
         <span class="photo-count">${imageCount ? `图 ${imageCount}` : "房源"}</span>
       </span>
       <span class="housing-info">
@@ -1891,7 +1930,7 @@ function listingCard(item, options = {}) {
   return `
     <article class="${cardClasses}" data-open-listing="${item.id}">
       <span class="listing-media">
-        <img src="${escapeHtml(coverImage)}" alt="${escapeHtml(item.title)}" loading="lazy" />
+        <img src="${escapeHtml(coverImage)}" alt="${escapeHtml(item.title)}" loading="lazy" onerror="this.closest('.listing-media').classList.add('is-empty'); this.remove();" />
         <span class="photo-count">${imageCount ? `图 ${imageCount}` : typeLabel(item.type)}</span>
       </span>
       <span class="listing-content">
@@ -2218,7 +2257,9 @@ async function submitListing(form, type) {
   const draftId = form.dataset.draftId;
   const data = Object.fromEntries(new FormData(form).entries());
   const selectedChips = [...form.querySelectorAll(".chip.active")].map((chip) => chip.dataset.chip).filter(Boolean);
-  const tags = normalizeList(data.tags).length ? normalizeList(data.tags) : selectedChips;
+  const manualTags = normalizeList(data.tags);
+  const structuredTags = type === "rent" ? [data.roomType, data.moveIn] : [data.moveIn];
+  const tags = [...new Set([...(manualTags.length ? manualTags : selectedChips), ...structuredTags].filter(Boolean))];
   const detailTags = tags.length ? tags : [typeLabel(type)];
   const existing = editingId ? state.listings.find((item) => item.id === editingId) : null;
   const selectedImages = normalizeImages(data.imageDataUrls);
@@ -2960,7 +3001,7 @@ document.addEventListener("submit", async (event) => {
     const formData = new FormData(searchForm);
     const query = formData.get("q") || "";
     const type = formData.get("type") || "all";
-    renderCategory(String(type), String(query));
+    renderCategory(String(type), String(query), currentRentFilters());
     return;
   }
 
@@ -3151,6 +3192,14 @@ document.addEventListener("click", async (event) => {
 });
 
 document.addEventListener("change", async (event) => {
+  const rentFilter = event.target.closest("[data-rent-filters] select");
+  if (rentFilter) {
+    const searchForm = document.querySelector("[data-search-form]");
+    const formData = searchForm ? new FormData(searchForm) : new FormData();
+    renderCategory("rent", String(formData.get("q") || ""), currentRentFilters());
+    return;
+  }
+
   const avatarInput = event.target.closest("[data-avatar-input]");
   if (avatarInput) {
     await updateProfileAvatar(avatarInput);
