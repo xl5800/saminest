@@ -1,5 +1,12 @@
 ﻿const STORAGE_KEY = "saminestLocalV1";
 const ADMIN_EMAIL = "xlw0980@gmail.com";
+const SITE_URL = "https://www.saminest.com";
+const DEFAULT_SEO = {
+  title: "Saminest | DMV 华语租房、二手与本地信息",
+  description: "Saminest 是面向 DMV 华语社区的租房、求租、二手和本地信息发布平台，支持邮箱验证、图片发布、收藏、站内消息和举报。",
+  image: `${SITE_URL}/og-image.png`,
+  url: SITE_URL
+};
 
 const seedListings = [
   {
@@ -241,6 +248,59 @@ function listingImages(item = {}) {
   return image && (!isFallback || item.photoCount) ? [image] : [];
 }
 
+function postUrl(id) {
+  return `#/post/${encodeURIComponent(id || "")}`;
+}
+
+function absolutePostUrl(id) {
+  return `${SITE_URL}/#/post/${encodeURIComponent(id || "")}`;
+}
+
+function compactText(value = "", maxLength = 80) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function seoDescriptionForListing(item) {
+  return [typeLabel(item.type), item.area, categoryPrimaryPrice(item), compactText(item.desc, 80)]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function setMetaContent(selector, content) {
+  const element = document.head.querySelector(selector);
+  if (element) element.setAttribute("content", content || "");
+}
+
+function resetSeoMeta() {
+  document.title = DEFAULT_SEO.title;
+  setMetaContent('meta[name="description"]', DEFAULT_SEO.description);
+  setMetaContent('meta[property="og:title"]', "Saminest");
+  setMetaContent('meta[property="og:description"]', "DMV 华人租房、求租、二手平台");
+  setMetaContent('meta[property="og:image"]', DEFAULT_SEO.image);
+  setMetaContent('meta[property="og:url"]', DEFAULT_SEO.url);
+  setMetaContent('meta[name="twitter:title"]', "Saminest");
+  setMetaContent('meta[name="twitter:description"]', "DMV 华人租房、求租、二手平台");
+  setMetaContent('meta[name="twitter:image"]', DEFAULT_SEO.image);
+}
+
+function updateListingSeo(item) {
+  const images = listingImages(item);
+  const title = `${item.title || "帖子"} | Saminest`;
+  const description = seoDescriptionForListing(item);
+  const image = images[0] || DEFAULT_SEO.image;
+  const url = absolutePostUrl(item.id);
+  document.title = title;
+  setMetaContent('meta[name="description"]', description);
+  setMetaContent('meta[property="og:title"]', title);
+  setMetaContent('meta[property="og:description"]', description);
+  setMetaContent('meta[property="og:image"]', image);
+  setMetaContent('meta[property="og:url"]', url);
+  setMetaContent('meta[name="twitter:title"]', title);
+  setMetaContent('meta[name="twitter:description"]', description);
+  setMetaContent('meta[name="twitter:image"]', image);
+}
+
 function isDataUrl(value) {
   return String(value || "").startsWith("data:");
 }
@@ -354,6 +414,25 @@ async function loadListingsFromSupabase() {
   state.listings = (data || []).map((item) => dbListingToUi(item, profileMap, imageMap));
   saveState();
   return true;
+}
+
+async function fetchListingByIdFromSupabase(id) {
+  if (!cloudReady() || !id) return null;
+  const { data, error } = await supabaseClient
+    .from("listings")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !data) {
+    if (error) console.warn("Failed to load listing by id", error);
+    return null;
+  }
+  const profileMap = await fetchProfilesMap([data.user_id]);
+  const imageMap = await fetchListingImagesMap([data.id]);
+  const listing = dbListingToUi(data, profileMap, imageMap);
+  state.listings = [listing, ...state.listings.filter((item) => item.id !== listing.id)];
+  saveState();
+  return listing;
 }
 
 async function saveListingImagesToSupabase(listingId, images = []) {
@@ -581,7 +660,7 @@ function route() {
     return renderAuthPage("设置新密码", "#home", "reset");
   }
 
-  const hash = location.hash.replace("#", "") || "home";
+  const hash = location.hash.replace(/^#\/?/, "") || "home";
   const [page, id, subpage] = hash.split("/");
   document.body.dataset.page = page;
 
@@ -596,9 +675,11 @@ function route() {
     return renderNoAccess();
   }
 
+  if (!["post", "listing"].includes(page)) resetSeoMeta();
+
   if (page === "home") return renderHome();
   if (page === "category") return renderCategory(id || "all");
-  if (page === "listing") return renderDetail(id);
+  if (page === "post" || page === "listing") return renderPostDetail(id);
   if (page === "seller") return renderSellerProfile(id, subpage || "all");
   if (page === "publish") return renderPublish();
   if (page === "post-used") return renderUsedForm();
@@ -815,9 +896,30 @@ function currentRentFilters() {
   }, {});
 }
 
-function renderDetail(id) {
-  const item = findListing(id);
+function renderLoading(message = "加载中...") {
+  app.innerHTML = `
+    <section class="page-screen">
+      ${pageHeader("加载中")}
+      <section class="subpage-card">
+        <p>${escapeHtml(message)}</p>
+      </section>
+    </section>
+  `;
+}
+
+async function renderPostDetail(id) {
+  if (!id) return renderUnavailable();
+  renderLoading("帖子加载中...");
+  let item = findListing(id);
+  if (!item) item = await fetchListingByIdFromSupabase(id);
+  if (!item || !canSeeListing(item)) return renderUnavailable("帖子不存在或已删除");
+  renderDetail(item);
+}
+
+function renderDetail(source) {
+  const item = typeof source === "string" ? findListing(source) : source;
   if (!item) return renderUnavailable();
+  updateListingSeo(item);
   rememberHistory(item.id);
   const canReport = !isOwner(item) && !isAdmin();
   const detailImages = listingImages(item);
@@ -837,11 +939,13 @@ function renderDetail(id) {
           <div class="price">${item.price}</div>
           <div class="meta">
             ${(isOwner(item) || isAdmin()) ? `<span class="status-badge ${listingStatus(item)}">${statusLabel(listingStatus(item))}</span>` : ""}
-            <span>${item.area}</span>
-            <span>${item.time}</span>
-            ${item.tags.map((tag) => `<span class="pill">${tag}</span>`).join("")}
+            <span>${typeLabel(item.type)}</span>
+            <span>${escapeHtml(item.area || "本地地区")}</span>
+            <span>${escapeHtml(displayListingTime(item))}</span>
+            ${item.tags.map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("")}
           </div>
-          <p class="body-copy">${item.desc}</p>
+          <p class="body-copy">${escapeHtml(item.desc || "暂无详细描述。")}</p>
+          <div class="mini-note">联系方式：${escapeHtml(item.contact || "站内消息")}</div>
           <div class="mini-note">建议先站内沟通，确认身份和细节后再交换私人联系方式。</div>
           <a class="seller-mini-card" href="${sellerUrl}">
             <span class="seller-avatar">${sellerAvatar(item.owner)}</span>
@@ -853,6 +957,7 @@ function renderDetail(id) {
           </a>
           <div class="detail-actions">
             <a class="secondary-button" href="#category/all">继续浏览</a>
+            <button class="secondary-button favorite-button ${state.favorites.includes(item.id) ? "active" : ""}" type="button" data-favorite="${item.id}">${state.favorites.includes(item.id) ? "已收藏" : "收藏"}</button>
             <button class="primary-button" type="button" data-contact="${item.id}">联系发布者</button>
             ${canReport ? `<button class="secondary-button report-button" type="button" data-report-listing="${item.id}">举报</button>` : ""}
             ${isAdmin() ? `
@@ -982,7 +1087,7 @@ function renderSellerProfile(ownerAccount, filter = "all") {
           <p>${escapeHtml(latestArea)} · ${posts.length} 条公开帖子</p>
           <div class="seller-profile-actions">
             <button class="primary-button" type="button" data-contact="${contactPost.id}">联系发帖者</button>
-            <a class="secondary-button" href="#listing/${contactPost.id}">查看最新帖子</a>
+            <a class="secondary-button" href="${postUrl(contactPost.id)}">查看最新帖子</a>
           </div>
         </div>
       </section>
@@ -1427,12 +1532,13 @@ function renderNoAccess() {
   `;
 }
 
-function renderUnavailable() {
+function renderUnavailable(message = "这条内容还在审核中、已被拒绝，或你没有权限查看。") {
+  resetSeoMeta();
   app.innerHTML = `
     <section class="page-screen">
       ${pageHeader("不可查看")}
       <section class="subpage-card">
-        <p>这条内容还在审核中、已被拒绝，或你没有权限查看。</p>
+        <p>${escapeHtml(message)}</p>
         <a class="primary-button" href="#home">返回首页</a>
       </section>
     </section>
@@ -1981,7 +2087,7 @@ function manageListingCard(item) {
     <article class="manage-card">
       ${listingCard(item, { compact: true, status: true })}
       <div class="manage-actions">
-        <a class="secondary-button" href="#listing/${item.id}">查看</a>
+        <a class="secondary-button" href="${postUrl(item.id)}">查看</a>
         <button class="secondary-button" type="button" data-edit-listing="${item.id}">编辑</button>
         ${listingStatus(item) !== "expired" ? `<button class="secondary-button" type="button" data-expire-listing="${item.id}">下架</button>` : ""}
         <button class="danger-button" type="button" data-delete-listing="${item.id}" data-delete-origin="me">删除</button>
@@ -2034,7 +2140,7 @@ function adminReviewCard(item) {
         <button class="primary-button" type="button" data-review-status="${item.id}:active">通过</button>
         <button class="secondary-button" type="button" data-review-status="${item.id}:rejected">拒绝</button>
         <button class="danger-button" type="button" data-ban-user="${item.id}">封禁用户</button>
-        <a class="secondary-button" href="#listing/${item.id}">查看详情</a>
+        <a class="secondary-button" href="${postUrl(item.id)}">查看详情</a>
       </div>
     </article>
   `;
@@ -2056,7 +2162,7 @@ function reportCard(report) {
         </dl>
       </div>
       <div class="admin-actions">
-        ${item ? `<a class="secondary-button" href="#listing/${item.id}">查看帖子</a>` : ""}
+        ${item ? `<a class="secondary-button" href="${postUrl(item.id)}">查看帖子</a>` : ""}
       </div>
     </article>
   `;
@@ -2164,7 +2270,7 @@ function rememberHistory(id) {
 
 async function toggleFavorite(id) {
   if (!isLoggedIn()) {
-    renderAuthPage("登录后收藏帖子", `#listing/${id}`);
+    renderAuthPage("登录后收藏帖子", postUrl(id));
     return;
   }
   if (cloudReady() && currentUserId()) {
@@ -2188,8 +2294,8 @@ async function toggleFavorite(id) {
 }
 
 function renderFavoriteContext(id) {
-  if ((location.hash || "").startsWith("#listing/")) {
-    renderDetail(id);
+  if (/^#\/?(post|listing)\//.test(location.hash || "")) {
+    renderPostDetail(id);
     return;
   }
   route();
@@ -2197,7 +2303,7 @@ function renderFavoriteContext(id) {
 
 async function createConversation(listingId) {
   if (!isLoggedIn()) {
-    renderAuthPage("登录后联系发布者", `#listing/${listingId}`);
+    renderAuthPage("登录后联系发布者", postUrl(listingId));
     return;
   }
   const listing = findListing(listingId);
@@ -2364,7 +2470,7 @@ async function submitListing(form, type) {
       state.drafts = state.drafts.filter((draft) => draft.id !== draftId);
     }
     await loadListingsFromSupabase();
-    location.hash = `#listing/${savedListing.id}`;
+    location.hash = postUrl(savedListing.id);
     route();
     return;
   }
@@ -2376,7 +2482,7 @@ async function submitListing(form, type) {
     state.drafts = state.drafts.filter((draft) => draft.id !== draftId);
   }
   saveState();
-  location.hash = `#listing/${listing.id}`;
+  location.hash = postUrl(listing.id);
 }
 
 function saveDraft(form, type) {
@@ -2570,7 +2676,7 @@ async function bulkReviewListings(action) {
 
 async function reportListing(id) {
   if (!isLoggedIn()) {
-    renderAuthPage("登录后举报帖子", `#listing/${id}`);
+    renderAuthPage("登录后举报帖子", postUrl(id));
     return;
   }
   const listing = findListing(id);
@@ -3097,7 +3203,7 @@ document.addEventListener("click", async (event) => {
 
   const openListing = event.target.closest("[data-open-listing]");
   if (openListing) {
-    location.hash = `#listing/${openListing.dataset.openListing}`;
+    location.hash = postUrl(openListing.dataset.openListing);
     return;
   }
 
@@ -3285,6 +3391,9 @@ if (hasSupabaseAuth()) {
 
 window.addEventListener("hashchange", route);
 window.addEventListener("DOMContentLoaded", async () => {
+  if (/^#\/?(post|listing)\//.test(location.hash || "")) {
+    renderLoading("帖子加载中...");
+  }
   await syncSupabaseSession();
   await refreshCloudData();
   route();
