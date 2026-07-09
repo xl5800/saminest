@@ -688,23 +688,19 @@ function authTitle(page) {
 function renderHome() {
   const listings = publicListings();
   app.innerHTML = `
-    <section class="home-screen">
+    <section class="home-screen masonry-home">
       ${mobileHeader()}
 
       <form class="home-search" data-search-form>
         <span class="search-symbol">⌕</span>
+        <input type="hidden" name="type" value="all" />
         <input name="q" placeholder="搜租房、求租、二手物品..." />
       </form>
 
-      <div class="home-chips" aria-label="分类筛选">
-        <a class="home-chip active" href="#category/all">全部</a>
-        <a class="home-chip" href="#category/rent">租房</a>
-        <a class="home-chip" href="#category/wanted">求租</a>
-        <a class="home-chip" href="#category/used">二手</a>
-      </div>
+      ${CategoryTabs("home")}
 
-      <div class="home-feed">
-        ${listings.length ? listings.map((item) => listingCard(item, { favorite: true })).join("") : emptyBlock("暂时还没有帖子")}
+      <div class="home-feed masonry-feed">
+        ${listings.length ? listings.map((item) => MasonryCard(item, { favorite: true })).join("") : emptyBlock("暂时还没有帖子")}
       </div>
 
       ${bottomNav("home")}
@@ -713,28 +709,56 @@ function renderHome() {
 }
 
 function renderCategory(type, query = "") {
+  const currentType = ["rent", "wanted", "used", "all"].includes(type) ? type : "all";
   const lowerQuery = query.trim().toLowerCase();
   const shown = publicListings().filter((item) => {
-    const matchesType = type === "all" || item.type === type;
-    const text = `${item.title} ${item.area} ${item.price} ${item.desc}`.toLowerCase();
+    const matchesType = currentType === "all" || item.type === currentType;
+    const text = `${item.title} ${item.area} ${item.price} ${item.desc} ${(item.tags || []).join(" ")} ${(item.detailTags || []).join(" ")}`.toLowerCase();
     return matchesType && (!lowerQuery || text.includes(lowerQuery));
   });
+  const isRent = currentType === "rent";
+  const title = currentType === "all" ? "推荐" : categoryName(currentType);
 
   app.innerHTML = `
-    <section class="page-screen">
-      ${pageHeader(type === "all" ? "全部信息" : categoryName(type))}
+    <section class="page-screen category-screen category-${currentType}">
+      ${pageHeader(title)}
+      ${CategoryTabs(currentType)}
       <form class="home-search inner-search" data-search-form>
         <span class="search-symbol">⌕</span>
+        <input type="hidden" name="type" value="${currentType}" />
         <input name="q" value="${escapeHtml(query)}" placeholder="搜索关键词或地区" />
       </form>
-      <div class="filters">
-        <a class="chip ${type === "all" ? "active" : ""}" href="#category/all">全部</a>
-        ${categories.map((c) => `<a class="chip ${type === c.key ? "active" : ""}" href="#category/${c.key}">${c.name}</a>`).join("")}
+      ${isRent ? FilterBar() : ""}
+      <div class="${isRent ? "housing-list" : "listing-list masonry-feed category-masonry-feed"}">
+        ${shown.length ? shown.map((item) => isRent ? HousingListCard(item) : MasonryCard(item, { favorite: true })).join("") : emptyBlock("没有找到相关帖子")}
       </div>
-      <div class="listing-list">
-        ${shown.length ? shown.map(listingCard).join("") : emptyBlock("没有找到相关帖子")}
-      </div>
-      ${bottomNav("category")}
+      ${bottomNav("home")}
+    </section>
+  `;
+}
+
+function CategoryTabs(active = "home") {
+  const tabs = [
+    ["home", "推荐", "#home"],
+    ["rent", "租房", "#category/rent"],
+    ["wanted", "求租", "#category/wanted"],
+    ["used", "二手", "#category/used"]
+  ];
+  return `
+    <nav class="home-chips home-channel-tabs category-tabs" aria-label="分类导航">
+      ${tabs.map(([key, label, href]) => `<a class="home-chip ${active === key ? "active" : ""}" href="${href}">${label}</a>`).join("")}
+    </nav>
+  `;
+}
+
+function FilterBar() {
+  return `
+    <section class="filter-bar" aria-label="租房筛选">
+      <label>地区<select><option>全部地区</option><option>Rockville</option><option>Bethesda</option><option>Arlington</option></select></label>
+      <label>价格<select><option>不限价格</option><option>$800 以下</option><option>$800-$1200</option><option>$1200 以上</option></select></label>
+      <label>房型<select><option>全部房型</option><option>单间</option><option>主卧</option><option>整租</option><option>合租</option></select></label>
+      <label>入住<select><option>任意时间</option><option>可立即入住</option><option>一周内</option><option>下个月</option></select></label>
+      <label>排序<select><option>最新发布</option><option>租金从低到高</option><option>租金从高到低</option></select></label>
     </section>
   `;
 }
@@ -1100,10 +1124,13 @@ function renderProfile() {
     <section class="page-screen me-screen">
       ${pageHeader("我的")}
       <section class="me-profile-card">
-        <div class="avatar">${state.user.avatar}</div>
+        <label class="avatar profile-avatar-button" aria-label="上传头像">
+          ${avatarContent(state.user.name, state.user.avatarUrl, state.user.avatar)}
+          <input class="visually-hidden" type="file" accept="image/*" data-avatar-input />
+        </label>
         <div>
-          <strong>${state.user.name}</strong>
-          <span>${state.user.subtitle}</span>
+          <a class="profile-name-link" href="#settings-profile">${escapeHtml(state.user.name || "Saminest 用户")}</a>
+          <span>${escapeHtml(state.user.subtitle || "Saminest")}</span>
         </div>
       </section>
       <section class="me-menu">
@@ -1192,7 +1219,7 @@ function renderSavedList(title, entries, emptyText) {
       <div class="listing-list">
         ${entries.length ? entries.map(listingCard).join("") : emptyBlock(emptyText)}
       </div>
-      ${bottomNav(title === "我的收藏" ? "me" : "category")}
+      ${bottomNav(title === "我的收藏" ? "favorites" : "home")}
     </section>
   `;
 }
@@ -1318,9 +1345,12 @@ function renderProfileSettings() {
       ${pageHeader("账号资料")}
       <form class="subpage-card profile-settings-form" data-profile-form>
         <div class="profile-editor-head">
-          <div class="avatar">${escapeHtml(state.user.avatar || "华")}</div>
+          <label class="avatar profile-avatar-button" aria-label="上传头像">
+            ${avatarContent(state.user.name, state.user.avatarUrl, state.user.avatar)}
+            <input class="visually-hidden" type="file" accept="image/*" data-avatar-input />
+          </label>
           <div>
-          <strong>${escapeHtml(state.user.name || "Saminest 用户")}</strong>
+            <strong>${escapeHtml(state.user.name || "Saminest 用户")}</strong>
             <span>${escapeHtml(state.session?.email || state.session?.account || "已登录账号")}</span>
           </div>
         </div>
@@ -1743,6 +1773,37 @@ function completeAuth(account, savedAccount, returnTo) {
   route();
 }
 
+function avatarContent(name = "华", imageUrl = "", fallback = "") {
+  const initial = String(fallback || name || "华").trim().slice(0, 1).toUpperCase() || "华";
+  return imageUrl
+    ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(name || "用户头像")}" />`
+    : `<span>${escapeHtml(initial)}</span>`;
+}
+
+function listingMetricSeed(item, salt = 0) {
+  return String(item?.id || item?.title || "")
+    .split("")
+    .reduce((sum, char) => sum + char.charCodeAt(0), salt);
+}
+
+function listingViewCount(item) {
+  return Number(item?.views || item?.viewCount || 80 + (listingMetricSeed(item, 17) % 920));
+}
+
+function listingFavoriteCount(item) {
+  const base = Number(item?.favoriteCount || item?.likes || 8 + (listingMetricSeed(item, 31) % 96));
+  return state.favorites.includes(item.id) ? base + 1 : base;
+}
+
+function formatMetric(value) {
+  const count = Number(value || 0);
+  return count >= 1000 ? `${(count / 1000).toFixed(count >= 10000 ? 0 : 1)}k` : String(count);
+}
+
+function ownerAvatarFor(item) {
+  return isOwner(item) ? state.user.avatarUrl : item.ownerAvatar || "";
+}
+
 function mobileHeader() {
   return `
     <header class="home-header">
@@ -1766,7 +1827,7 @@ function bottomNav(active) {
   return `
     <nav class="home-bottom-nav" aria-label="底部导航">
       <a class="${active === "home" ? "active" : ""}" href="#home"><span>⌂</span>首页</a>
-      <a class="${active === "category" ? "active" : ""}" href="#category/all"><span>▦</span>分类</a>
+      <a class="${active === "favorites" ? "active" : ""}" href="#favorites"><span>♡</span>收藏</a>
       <a class="home-publish ${active === "publish" ? "active" : ""}" href="#publish"><span>＋</span>发布</a>
       <a class="${active === "messages" ? "active" : ""}" href="#messages"><span>信</span>消息${messageCount ? `<em>${messageCount}</em>` : ""}</a>
       <a class="${active === "me" ? "active" : ""}" href="#me"><span>○</span>我的</a>
@@ -1774,30 +1835,89 @@ function bottomNav(active) {
   `;
 }
 
+function MasonryCard(item, options = {}) {
+  return listingCard(item, { ...options, masonry: true });
+}
+
+function HousingListCard(item) {
+  const images = listingImages(item);
+  const imageCount = images.length || item.photoCount || 0;
+  const coverImage = images[0] || item.image || fallbackImages[item.type] || fallbackImages.used;
+  return `
+    <article class="housing-list-card" data-open-listing="${item.id}">
+      <span class="housing-media">
+        <img src="${escapeHtml(coverImage)}" alt="${escapeHtml(item.title)}" loading="lazy" />
+        <span class="photo-count">${imageCount ? `图 ${imageCount}` : "房源"}</span>
+      </span>
+      <span class="housing-info">
+        <span class="housing-title">${escapeHtml(item.title)}</span>
+        <span class="housing-price">${escapeHtml(item.price)}</span>
+        <span class="housing-location">${escapeHtml(item.area)}</span>
+        <span class="housing-facts">
+          <span>${escapeHtml(housingRoomType(item))}</span>
+          <span>${escapeHtml(housingSize(item))}</span>
+          <span>${escapeHtml(housingMoveIn(item))}</span>
+        </span>
+        <span class="housing-bottom">
+          <span>${escapeHtml(item.time || "刚刚")}</span>
+          <span>♡ ${formatMetric(listingFavoriteCount(item))} · 看 ${formatMetric(listingViewCount(item))}</span>
+        </span>
+      </span>
+    </article>
+  `;
+}
+
+function housingRoomType(item) {
+  return item.roomType || (item.detailTags || item.tags || []).find((tag) => /单间|主卧|整租|合租|卧室|房/.test(tag)) || "房型详询";
+}
+
+function housingSize(item) {
+  return item.size || item.areaSize || (item.detailTags || item.tags || []).find((tag) => /sqft|尺|面积|平/.test(tag)) || "面积详询";
+}
+
+function housingMoveIn(item) {
+  return item.moveIn || (item.detailTags || item.tags || []).find((tag) => /入住|立即|一周|下个月|月/.test(tag)) || "入住时间详询";
+}
+
 function listingCard(item, options = {}) {
   const favored = state.favorites.includes(item.id);
-  const tags = (item.detailTags?.length ? item.detailTags : item.tags || []).slice(0, 3);
+  const tags = (item.detailTags?.length ? item.detailTags : item.tags || []).slice(0, 2);
   const status = listingStatus(item);
   const showStatus = Boolean(options.status);
   const images = listingImages(item);
   const imageCount = images.length || item.photoCount || 0;
   const coverImage = images[0] || item.image || fallbackImages[item.type] || fallbackImages.used;
+  const ownerName = item.owner || "发布者";
+  const cardClasses = ["listing-card", options.compact ? "compact" : "", options.masonry ? "masonry-card" : ""].filter(Boolean).join(" ");
   return `
-    <article class="listing-card ${options.compact ? "compact" : ""}" data-open-listing="${item.id}">
+    <article class="${cardClasses}" data-open-listing="${item.id}">
       <span class="listing-media">
-        <img src="${escapeHtml(coverImage)}" alt="${escapeHtml(item.title)}" />
+        <img src="${escapeHtml(coverImage)}" alt="${escapeHtml(item.title)}" loading="lazy" />
         <span class="photo-count">${imageCount ? `图 ${imageCount}` : typeLabel(item.type)}</span>
       </span>
       <span class="listing-content">
-        <span class="listing-row">
-          <span class="listing-title">${escapeHtml(item.title)}</span>
-          <span class="listing-time">${item.time}</span>
+        <span class="listing-title">${escapeHtml(item.title)}</span>
+        <span class="listing-meta-line">
+          <span class="listing-type">${typeLabel(item.type)}</span>
+          <span>${escapeHtml(categoryPrimaryMeta(item))}</span>
         </span>
-        <span class="price">${item.price}</span>
-        <span class="listing-area">位置 ${escapeHtml(item.area)}</span>
-        <span class="meta">
+        <span class="listing-price-row">
+          <span class="price">${escapeHtml(categoryPrimaryPrice(item))}</span>
+          <span class="listing-time">${escapeHtml(item.time || "刚刚")}</span>
+        </span>
+        <span class="meta listing-tags">
           ${showStatus ? `<span class="status-badge ${status}">${statusLabel(status)}</span>` : ""}
           ${tags.map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join("")}
+        </span>
+        <span class="listing-author-row">
+          <span class="listing-author">
+            <span class="listing-author-avatar">${avatarContent(ownerName, ownerAvatarFor(item))}</span>
+            <span class="listing-author-name">${escapeHtml(ownerName)}</span>
+          </span>
+          <span class="listing-stats">
+            <span>♡ ${formatMetric(listingFavoriteCount(item))}</span>
+            <span>看 ${formatMetric(listingViewCount(item))}</span>
+          </span>
         </span>
       </span>
       ${options.favorite ? `
@@ -1961,6 +2081,21 @@ function categoryName(type) {
 
 function typeLabel(type) {
   return { rent: "房源", wanted: "求租", used: "二手" }[type] || "帖子";
+}
+
+function categoryPrimaryMeta(item) {
+  if (item.type === "wanted") return `目标 ${item.area || "地区不限"} · ${housingMoveIn(item)}`;
+  if (item.type === "used") return `${usedCondition(item)} · ${item.area || "本地交易"}`;
+  return item.area || "DMV";
+}
+
+function categoryPrimaryPrice(item) {
+  if (item.type === "wanted") return item.price || "预算面议";
+  return item.price || "价格面议";
+}
+
+function usedCondition(item) {
+  return item.condition || (item.detailTags || item.tags || []).find((tag) => /新|成色|自取|可小刀|闲置/.test(tag)) || "成色详询";
 }
 
 function favoriteListings() {
@@ -2561,11 +2696,34 @@ async function saveProfileSettings(form) {
     ...state.user,
     name,
     subtitle,
-    avatar: name.slice(0, 1).toUpperCase()
+    avatar: state.user.avatarUrl ? state.user.avatar : name.slice(0, 1).toUpperCase()
   };
   saveState();
   window.alert("账号资料已保存。");
   renderSettings();
+}
+
+async function updateProfileAvatar(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  if (!String(file.type || "").startsWith("image/")) {
+    window.alert("请选择图片文件作为头像。");
+    return;
+  }
+  try {
+    const avatarUrl = await photoFileToDataUrl(file);
+    state.user = {
+      ...state.user,
+      avatarUrl,
+      avatar: String(state.user.name || "华").slice(0, 1).toUpperCase()
+    };
+    saveState();
+    if ((location.hash || "").startsWith("#settings-profile")) renderProfileSettings();
+    else renderProfile();
+  } catch (error) {
+    console.warn("Failed to update avatar", error);
+    window.alert("头像读取失败，请换一张图片再试。");
+  }
 }
 
 function escapeHtml(value) {
@@ -2805,8 +2963,10 @@ document.addEventListener("submit", async (event) => {
   const searchForm = event.target.closest("[data-search-form]");
   if (searchForm) {
     event.preventDefault();
-    const query = new FormData(searchForm).get("q") || "";
-    renderCategory("all", String(query));
+    const formData = new FormData(searchForm);
+    const query = formData.get("q") || "";
+    const type = formData.get("type") || "all";
+    renderCategory(String(type), String(query));
     return;
   }
 
@@ -2997,6 +3157,12 @@ document.addEventListener("click", async (event) => {
 });
 
 document.addEventListener("change", async (event) => {
+  const avatarInput = event.target.closest("[data-avatar-input]");
+  if (avatarInput) {
+    await updateProfileAvatar(avatarInput);
+    return;
+  }
+
   const input = event.target.closest("[data-photo-input]");
   if (!input || !input.files?.[0]) return;
 
@@ -3066,4 +3232,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   await refreshCloudData();
   route();
 });
+
+
+
 
