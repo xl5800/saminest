@@ -7070,3 +7070,260 @@ body:not([data-page="auth"]) .form-page .form-intro {
     transform: translateX(50%) !important;
   }
 }
+
+/* Legal pages */
+.legal-screen {
+  width: min(100%, 760px) !important;
+  margin: 0 auto;
+  padding: 0 16px 96px !important;
+  background: #f7f5f1 !important;
+}
+
+.legal-header {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 10px;
+  min-height: calc(64px + env(safe-area-inset-top));
+  margin: 0 -16px;
+  padding: env(safe-area-inset-top) 16px 0;
+  border-bottom: 1px solid rgba(225, 219, 211, 0.86);
+  background: rgba(247, 245, 241, 0.96);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.legal-header > div {
+  min-width: 0;
+  text-align: center;
+}
+
+.legal-header span {
+  display: block;
+  margin-bottom: 2px;
+  color: #8e857c;
+  font-size: 10px;
+  font-weight: 760;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.legal-header h1 {
+  margin: 0;
+  color: #201d1a;
+  font-size: 18px;
+  font-weight: 880;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.legal-header > a {
+  justify-self: end;
+  color: #e95f24;
+  font-size: 13px;
+  font-weight: 820;
+}
+
+.legal-document {
+  margin: 18px auto 0;
+  padding: 22px 20px 28px;
+  border: 1px solid rgba(225, 219, 211, 0.9);
+  border-radius: 8px;
+  background: #fff;
+  color: #4c4742;
+  box-shadow: 0 12px 32px rgba(49, 41, 34, 0.06);
+}
+
+.legal-updated {
+  margin: 0 0 20px !important;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #eee9e3;
+  color: #7d746c !important;
+  font-size: 12px !important;
+}
+
+.legal-intro {
+  padding: 16px;
+  border-left: 3px solid #ff6a21;
+  border-radius: 0 6px 6px 0;
+  background: #fff7f1;
+}
+
+.legal-document section {
+  padding-top: 22px;
+}
+
+.legal-document h2 {
+  margin: 0 0 10px;
+  color: #201d1a;
+  font-size: 18px;
+  font-weight: 860;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.legal-document h3 {
+  margin: 18px 0 8px;
+  color: #3b3631;
+  font-size: 15px;
+  font-weight: 820;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
+.legal-document p,
+.legal-document li {
+  color: #514b45;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.legal-document p {
+  margin: 8px 0;
+}
+
+.legal-document ul,
+.legal-document ol {
+  margin: 8px 0 10px;
+  padding-left: 22px;
+}
+
+.legal-document li + li {
+  margin-top: 4px;
+}
+
+.legal-document a {
+  color: #dc571f;
+  font-weight: 760;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (min-width: 760px) {
+  .legal-screen {
+    padding-bottom: 56px !important;
+  }
+
+  .legal-document {
+    margin-top: 24px;
+    padding: 34px 42px 44px;
+  }
+}
+
+/* Mobile app viewport: body stays fixed and #app owns vertical scrolling. */
+@media (max-width: 759px) {
+  html {
+    width: 100% !important;
+    height: 100% !important;
+    height: 100dvh !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+  }
+
+  body {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+    touch-action: manipulation;
+  }
+
+  .app-shell,
+  body[data-page="auth"] .app-shell,
+  body:not([data-page="auth"]) .app-shell {
+    position: relative !important;
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    max-height: 100dvh !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+  }
+
+  .app-main,
+  #app,
+  body[data-page="auth"] .app-main,
+  body:not([data-page="auth"]) .app-main {
+    position: relative !important;
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: none !important;
+    -webkit-overflow-scrolling: touch;
+    touch-action: manipulation;
+    scroll-behavior: auto;
+    scrollbar-width: none;
+  }
+
+  .app-main::-webkit-scrollbar,
+  #app::-webkit-scrollbar {
+    display: none;
+  }
+
+  .home-screen,
+  .page-screen,
+  .form-page,
+  .auth-screen,
+  .auth-v2-screen {
+    width: 100% !important;
+    min-height: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  body:not([data-page="auth"]):not([data-page="terms"]):not([data-page="privacy"]) .home-screen,
+  body:not([data-page="auth"]):not([data-page="terms"]):not([data-page="privacy"]) .page-screen {
+    padding-bottom: calc(112px + env(safe-area-inset-bottom)) !important;
+  }
+
+  body[data-page="auth"] .auth-screen,
+  body[data-page="auth"] .auth-v2-screen {
+    padding-bottom: calc(28px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .home-chips,
+  .category-tabs,
+  .filter-bar,
+  .filters,
+  .admin-summary {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    overscroll-behavior-x: contain !important;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+  }
+
+  .home-chips > *,
+  .category-tabs > *,
+  .filter-bar > *,
+  .filters > *,
+  .admin-summary > * {
+    flex-shrink: 0;
+  }
+
+  .legal-screen {
+    padding-bottom: calc(32px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .legal-document {
+    padding: 20px 16px 26px;
+  }
+}

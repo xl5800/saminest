@@ -678,6 +678,8 @@ function route() {
   const hash = location.hash.replace(/^#\/?/, "") || "home";
   const [page, id, subpage] = hash.split("/");
   document.body.dataset.page = page;
+  app.scrollTop = 0;
+  app.scrollLeft = 0;
 
   if (page === "auth") {
     return renderAuthPage("欢迎回来", "#home", id || "login");
@@ -711,6 +713,8 @@ function route() {
   if (page === "admin-feedback") return renderAdminFeedback();
   if (page === "admin-reports") return renderAdminReports();
   if (page === "help") return renderHelp();
+  if (page === "terms") return renderTerms();
+  if (page === "privacy") return renderPrivacy();
   if (page === "settings") return renderSettings();
   if (page === "settings-profile") return renderProfileSettings();
   if (page === "admin-review") return renderAdminReview(id || "pending");
@@ -1494,6 +1498,211 @@ function renderHelp() {
   `;
 }
 
+function renderLegalDocument(englishTitle, chineseTitle, content) {
+  document.title = `${chineseTitle} | Saminest`;
+  app.innerHTML = `
+    <section class="page-screen legal-screen">
+      <header class="legal-header">
+        <button class="plain-back" type="button" data-back aria-label="返回">‹</button>
+        <div>
+          <span>${englishTitle}</span>
+          <h1>${chineseTitle}</h1>
+        </div>
+        <a href="#home">首页</a>
+      </header>
+      <article class="legal-document">
+        <p class="legal-updated"><strong>Last Updated / 最后更新：</strong>2026-07-09</p>
+        ${content}
+      </article>
+    </section>
+  `;
+}
+
+function renderTerms() {
+  renderLegalDocument("Terms of Service", "用户服务协议", `
+    <div class="legal-intro">
+      <p>欢迎使用 <strong>Saminest</strong>（以下简称“本平台”、“Saminest”、“我们”）。</p>
+      <p>本协议适用于所有访问、浏览、注册、发布信息或使用本平台服务的用户。</p>
+      <p>在使用本平台之前，请您仔细阅读本协议。当您访问、注册账号或使用本平台时，即表示您已经阅读、理解并同意接受本协议全部内容。</p>
+    </div>
+
+    <section><h2>一、平台介绍</h2>
+      <p>Saminest 是一个在线信息发布平台，目前主要提供：</p>
+      <ul><li>房屋出租（Rental Listings）</li><li>求租信息（Housing Wanted）</li><li>二手交易（Marketplace）</li></ul>
+      <p>平台仅提供信息发布、浏览及交流服务。</p>
+      <p>Saminest <strong>不是房东、卖家、中介、经纪人、支付机构或物流服务提供者</strong>。平台不会参与任何用户之间的实际交易。</p>
+    </section>
+
+    <section><h2>二、用户资格</h2>
+      <p>使用本平台即表示您承诺：</p>
+      <ol><li>您具有合法使用本平台的资格；</li><li>您提供的信息真实、准确、完整；</li><li>您不会冒充他人；</li><li>您不会利用平台从事违法活动；</li><li>您将妥善保管账号及密码。</li></ol>
+      <p>用户应对自己账号内发生的一切行为承担责任。</p>
+    </section>
+
+    <section><h2>三、账号注册</h2>
+      <p>注册账号时，用户可能需要提供：</p>
+      <ul><li>邮箱</li><li>用户昵称</li><li>登录信息</li></ul>
+      <p>用户不得：</p>
+      <ul><li>冒充他人</li><li>使用虚假身份</li><li>恶意注册多个账号</li><li>使用机器人批量注册</li></ul>
+      <p>平台有权拒绝任何异常注册申请。</p>
+    </section>
+
+    <section><h2>四、平台服务</h2>
+      <h3>房屋出租</h3><p>用户可以发布 Apartment、Condo、House、Townhouse、Room、Studio 等出租信息。</p>
+      <h3>求租</h3><p>用户可以发布求租需求、合租需求、找室友等信息。</p>
+      <h3>二手交易</h3><p>用户可以发布家具、电器、数码产品、汽车用品、学习用品、生活用品，以及法律允许交易的其他物品。</p>
+      <p>平台未来可能增加新的功能。平台有权调整、暂停或终止部分服务，而无需提前通知。</p>
+    </section>
+
+    <section><h2>五、信息发布规范</h2>
+      <p>所有用户发布的信息必须真实、合法、准确，并且不侵犯他人权益。</p>
+      <h3>虚假内容</h3><ul><li>虚假房源</li><li>虚假价格</li><li>虚假图片</li><li>虚假联系方式</li><li>虚假身份</li></ul>
+      <h3>欺诈行为</h3><ul><li>收取定金后失联</li><li>冒充房东</li><li>冒充买家</li><li>冒充平台工作人员</li><li>网络诈骗</li></ul>
+      <h3>非法内容</h3><ul><li>色情内容</li><li>赌博信息</li><li>毒品</li><li>武器交易</li><li>非法服务</li><li>洗钱</li><li>金融诈骗</li></ul>
+      <h3>垃圾内容</h3><ul><li>重复发帖</li><li>恶意广告</li><li>自动发帖</li><li>机器人发帖</li><li>批量刷帖</li></ul>
+      <h3>侵权内容</h3><ul><li>他人图片</li><li>他人文字</li><li>商标</li><li>版权内容</li><li>个人隐私</li></ul>
+      <p>未经授权不得发布。</p>
+    </section>
+
+    <section><h2>六、内容审核</h2>
+      <p>平台有权审核帖子、修改分类、删除内容、下架帖子、屏蔽图片、限制账号功能或永久封禁账号。平台无需提前通知用户。</p>
+    </section>
+
+    <section><h2>七、交易风险</h2>
+      <p>平台仅提供信息展示。所有交易均由用户自行决定，包括但不限于看房、签合同、面交、邮寄、转账及付款。</p>
+      <p>平台不会担保房源真实性、商品真实性、房东身份、买家身份、商品质量或合同履行。请用户自行判断交易风险。</p>
+    </section>
+
+    <section><h2>八、安全提示</h2>
+      <p>为了保护您的财产安全，我们建议：</p>
+      <ul><li>实地看房</li><li>当面交易</li><li>核实身份</li><li>使用安全支付方式</li><li>不向陌生人提前支付定金</li></ul>
+      <p>如果发现诈骗，请立即停止交易，并及时向有关部门举报。</p>
+    </section>
+
+    <section><h2>九、用户内容</h2>
+      <p>用户发布的内容，包括图片、标题、描述和评论，其知识产权归用户所有。</p>
+      <p>用户授予平台一项全球范围内、非独占、免版税的许可，用于展示、存储、复制、推广和运营平台服务。</p>
+      <p>如果用户删除内容，该授权将在合理时间内终止，但法律要求保留或系统备份中的内容除外。</p>
+    </section>
+
+    <section><h2>十、知识产权</h2>
+      <p>Saminest 网站中的 Logo、页面设计、UI、程序代码、数据库、图标和文本（用户发布内容除外）均属于平台所有。未经许可不得复制、转载或商业使用。</p>
+    </section>
+
+    <section><h2>十一、账号暂停与终止</h2>
+      <p>如用户违反本协议，平台有权删除帖子、限制发帖、暂停账号、永久封禁账号或删除账号，无需提前通知。</p>
+    </section>
+
+    <section><h2>十二、免责声明</h2>
+      <p>在法律允许范围内，平台不承担以下责任：</p>
+      <ul><li>用户被骗</li><li>房屋纠纷</li><li>商品质量问题</li><li>合同纠纷</li><li>支付纠纷</li><li>用户之间的任何争议</li><li>第三方行为造成的损失</li><li>网络中断</li><li>数据丢失</li><li>不可抗力</li></ul>
+      <p>用户使用平台的风险由用户自行承担。</p>
+    </section>
+
+    <section><h2>十三、第三方服务</h2>
+      <p>平台可能使用第三方服务，包括但不限于 Supabase（数据库及身份验证）、Vercel（网站托管）、Cloudflare（网络安全与加速）、Google Analytics（如启用）及 Microsoft Clarity（如启用）。</p>
+      <p>第三方服务受其各自条款和隐私政策约束。</p>
+    </section>
+
+    <section><h2>十四、协议修改</h2>
+      <p>平台有权根据业务发展或法律法规要求修改本协议。修改后的协议将在网站公布。继续使用平台即表示您接受最新版本。</p>
+    </section>
+
+    <section><h2>十五、适用法律</h2>
+      <p>本协议受适用法律管辖。如因本协议产生争议，双方应首先友好协商解决；协商不成的，可依法向有管辖权的法院提起诉讼。</p>
+    </section>
+
+    <section><h2>十六、联系我们</h2>
+      <p>如果您对本协议有任何疑问，可通过网站内的 <a href="#feedback">意见反馈（Feedback）</a> 页面与我们联系。</p>
+      <p>感谢您使用 Saminest。我们致力于打造一个真实、安全、友好的租房、求租及二手交易社区。</p>
+    </section>
+  `);
+}
+
+function renderPrivacy() {
+  renderLegalDocument("Privacy Policy", "隐私政策", `
+    <div class="legal-intro">
+      <p>欢迎使用 <strong>Saminest</strong>（以下简称“本平台”、“我们”）。</p>
+      <p>我们尊重您的隐私，并致力于保护您的个人信息安全。</p>
+      <p>本隐私政策说明我们如何收集、使用、存储、共享及保护您的个人信息。当您访问或使用本平台时，即表示您已阅读并同意本隐私政策。</p>
+    </div>
+
+    <section><h2>一、我们收集的信息</h2>
+      <h3>1. 您主动提供的信息</h3>
+      <p>包括但不限于：</p>
+      <ul><li>邮箱地址</li><li>用户昵称</li><li>头像（如适用）</li><li>发布的房源信息</li><li>发布的求租信息</li><li>发布的二手商品信息</li><li>上传的图片</li><li>联系方式（如您主动填写）</li><li>意见反馈内容</li></ul>
+      <h3>2. 自动收集的信息</h3>
+      <p>为了保障平台安全及改善用户体验，我们可能自动收集：</p>
+      <ul><li>IP 地址</li><li>浏览器类型</li><li>操作系统</li><li>设备信息</li><li>屏幕尺寸</li><li>访问时间</li><li>页面浏览记录</li><li>点击记录</li><li>来源页面</li><li>Cookie</li><li>Session 信息</li></ul>
+      <h3>3. 第三方登录（如未来支持）</h3>
+      <p>若未来支持 Google、Apple 等登录方式，我们可能获取用户名称、邮箱和用户头像，仅限完成登录及账号管理所必需的信息。</p>
+    </section>
+
+    <section><h2>二、信息的使用目的</h2>
+      <p>我们可能将您的信息用于：</p>
+      <ul><li>创建及管理账号</li><li>登录验证</li><li>发布房源</li><li>发布求租</li><li>发布二手商品</li><li>展示用户内容</li><li>提供平台功能</li><li>发送必要通知</li><li>防止垃圾信息</li><li>防止诈骗</li><li>风险控制</li><li>统计访问数据</li><li>优化网站性能</li><li>改善用户体验</li><li>回应用户反馈</li></ul>
+      <p><strong>我们不会将您的个人信息出售给任何第三方。</strong></p>
+    </section>
+
+    <section><h2>三、Cookie</h2>
+      <p>为了提供更好的服务，本平台可能使用 Cookie。Cookie 可用于保持登录状态、保存用户偏好、提高访问速度、防止重复登录、网站统计分析及提升用户体验。</p>
+      <p>您可以通过浏览器关闭 Cookie。关闭 Cookie 后，部分功能可能无法正常使用。</p>
+    </section>
+
+    <section><h2>四、信息共享</h2>
+      <p>除以下情况外，我们不会出售、出租或公开您的个人信息：</p>
+      <h3>获得您的授权</h3><p>您明确同意共享。</p>
+      <h3>法律要求</h3><p>根据法律法规、法院命令或政府机关要求，依法提供必要信息。</p>
+      <h3>平台安全</h3><p>为了防止诈骗、防止违法行为、保护用户权益及维护平台安全，平台可能披露必要信息。</p>
+      <h3>第三方服务</h3><p>平台可能使用第三方服务提供商协助运营，例如 Supabase（数据库及身份验证）、Vercel（网站托管）、Cloudflare（CDN 与安全）、Google Analytics（访问统计，如启用）和 Microsoft Clarity（用户行为分析，如启用）。第三方可能根据其自身隐私政策处理必要的数据。</p>
+    </section>
+
+    <section><h2>五、数据存储</h2>
+      <p>您的数据可能存储于第三方云服务器。平台会采取合理措施保护数据安全，包括 HTTPS 加密传输、权限控制、身份验证、数据备份和安全监控。</p>
+      <p>尽管如此，没有任何互联网系统能够保证绝对安全。</p>
+    </section>
+
+    <section><h2>六、数据保留</h2>
+      <p>我们将在实现本政策所述目的所必需的期限内保留您的信息。</p>
+      <p>在法律法规要求、解决纠纷、防止欺诈、配合调查或履行法律义务的情况下，我们可能保留部分信息。</p>
+    </section>
+
+    <section><h2>七、用户权利</h2>
+      <p>您有权查看自己的资料、修改资料、修改发布内容、删除发布内容、删除账号（如平台提供），以及请求删除依法无需保留的个人信息。</p>
+      <p>平台将在合理期限内处理您的请求。</p>
+    </section>
+
+    <section><h2>八、儿童隐私</h2>
+      <p>Saminest 不面向 <strong>13 岁以下儿童</strong>提供服务。</p>
+      <p>如果我们发现儿童未经监护人同意提供个人信息，我们将在核实后尽快删除相关数据。</p>
+    </section>
+
+    <section><h2>九、安全措施</h2>
+      <p>为了保护您的数据，我们采取包括但不限于 HTTPS 加密、身份认证、权限控制、安全更新、风险监测和数据备份等措施。</p>
+      <p>请您妥善保管自己的账号和密码。如发现账号异常，请及时修改密码。</p>
+    </section>
+
+    <section><h2>十、第三方链接</h2>
+      <p>平台可能包含房东网站、外部资源或第三方服务等链接。点击第三方链接后，相关网站的隐私政策将适用于您。</p>
+      <p>Saminest 不对第三方网站负责。</p>
+    </section>
+
+    <section><h2>十一、国际数据传输</h2>
+      <p>由于互联网服务具有全球性质，您的信息可能会在不同国家或地区进行处理和存储。我们将采取合理措施确保您的信息获得适当保护。</p>
+    </section>
+
+    <section><h2>十二、政策更新</h2>
+      <p>我们可能根据法律法规变化、平台业务发展或产品更新修改本隐私政策。更新后的版本将在本页面公布。</p>
+      <p>继续使用平台即表示您同意最新版本。</p>
+    </section>
+
+    <section><h2>十三、联系我们</h2>
+      <p>如果您对本隐私政策有任何疑问、建议或请求，可通过网站内的 <a href="#feedback">意见反馈（Feedback）</a> 页面联系我们。</p>
+      <p>感谢您对 Saminest 的信任。我们将持续努力保护您的个人信息安全，并为您提供安全、可靠的租房、求租和二手交易平台。</p>
+    </section>
+  `);
+}
+
 function renderSettings() {
   app.innerHTML = `
     <section class="page-screen">
@@ -1502,6 +1711,8 @@ function renderSettings() {
         <div class="subpage-list">
           <a href="#settings-profile">账号资料<span>${state.user.name}</span></a>
           <a href="#messages">消息通知<span>已开启</span></a>
+          <a href="#terms">用户服务协议<span>查看</span></a>
+          <a href="#privacy">隐私政策<span>查看</span></a>
           <a href="#home">清除演示数据<span data-reset>重置</span></a>
         </div>
         <button class="logout-button" type="button" data-logout>退出登录</button>
@@ -1667,7 +1878,7 @@ function renderAuthPage(title = "登录后继续", returnTo = "#home", mode = "l
         <label class="auth-input"><span>昵称</span><div><em>人</em><input name="name" autocomplete="name" maxlength="28" placeholder="例如 Rockville 小陈" /></div></label>
         ${passwordInput("password", "密码", "至少 6 位密码")}
         ${passwordInput("confirmPassword", "确认密码", "再次输入密码")}
-        <label class="auth-agreement auth-v2-agreement"><input type="checkbox" name="agreement" required /><span>我已阅读并同意<a href="#terms">《用户服务协议》</a>和<a href="#privacy">《隐私条款》</a></span></label>
+        <label class="auth-agreement auth-v2-agreement"><input type="checkbox" name="agreement" required /><span>我已阅读并同意<a href="#terms">《用户服务协议》</a>和<a href="#privacy">《隐私政策》</a></span></label>
         <button class="primary-button auth-v2-submit" type="submit">创建账号</button>
         <p class="auth-switch">已有账号？<button type="button" data-auth-screen="login">去登录</button></p>
       </form>
@@ -3464,8 +3675,69 @@ if (hasSupabaseAuth()) {
   });
 }
 
+function installMobileViewportGuard() {
+  const gesture = {
+    startX: 0,
+    startY: 0,
+    verticalScroller: app,
+    horizontalScroller: null
+  };
+
+  const isMobileViewport = () => window.matchMedia("(max-width: 759px)").matches;
+  const isScrollable = (element, axis) => {
+    if (!element) return false;
+    const style = window.getComputedStyle(element);
+    const overflow = axis === "x" ? style.overflowX : style.overflowY;
+    const hasOverflow = axis === "x"
+      ? element.scrollWidth > element.clientWidth + 1
+      : element.scrollHeight > element.clientHeight + 1;
+    return /(auto|scroll)/.test(overflow) && hasOverflow;
+  };
+  const findScroller = (target, axis) => {
+    let element = target instanceof Element ? target : null;
+    while (element && element !== document.body) {
+      if (isScrollable(element, axis)) return element;
+      element = element.parentElement;
+    }
+    return axis === "y" ? app : null;
+  };
+  const canScrollVertically = (element, fingerDeltaY) => {
+    if (!isScrollable(element, "y")) return false;
+    if (fingerDeltaY > 0) return element.scrollTop > 0;
+    if (fingerDeltaY < 0) return element.scrollTop + element.clientHeight < element.scrollHeight - 1;
+    return true;
+  };
+
+  document.addEventListener("touchstart", (event) => {
+    if (!isMobileViewport() || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    gesture.startX = touch.clientX;
+    gesture.startY = touch.clientY;
+    gesture.verticalScroller = findScroller(event.target, "y");
+    gesture.horizontalScroller = findScroller(event.target, "x");
+  }, { passive: true });
+
+  document.addEventListener("touchmove", (event) => {
+    if (!isMobileViewport() || event.touches.length !== 1 || !event.cancelable) return;
+    const touch = event.touches[0];
+    const deltaX = touch.clientX - gesture.startX;
+    const deltaY = touch.clientY - gesture.startY;
+
+    if (Math.abs(deltaX) > Math.abs(deltaY)) {
+      if (!gesture.horizontalScroller) event.preventDefault();
+      return;
+    }
+
+    if (Math.abs(deltaY) < 2) return;
+    const innerCanScroll = canScrollVertically(gesture.verticalScroller, deltaY);
+    const appCanScroll = gesture.verticalScroller !== app && canScrollVertically(app, deltaY);
+    if (!innerCanScroll && !appCanScroll) event.preventDefault();
+  }, { passive: false });
+}
+
 window.addEventListener("hashchange", route);
 window.addEventListener("DOMContentLoaded", async () => {
+  installMobileViewportGuard();
   if (/^#\/?(post|listing)\//.test(location.hash || "")) {
     renderLoading("帖子加载中...");
   }
