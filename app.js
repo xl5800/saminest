@@ -311,7 +311,12 @@ async function dataUrlToBlob(dataUrl) {
 }
 
 function imagePreviewTemplate(images = []) {
-  return images.map((src, index) => `<img src="${escapeHtml(src)}" alt="已选图片 ${index + 1}" />`).join("");
+  return images.map((src, index) => `
+    <div class="photo-preview-item">
+      <img src="${escapeHtml(src)}" alt="已选图片 ${index + 1}" />
+      <button class="photo-remove-button" type="button" data-remove-photo="${index}" aria-label="删除第 ${index + 1} 张图片">×</button>
+    </div>
+  `).join("");
 }
 
 function dbListingToUi(row, profileMap = {}, imageMap = {}) {
@@ -322,6 +327,7 @@ function dbListingToUi(row, profileMap = {}, imageMap = {}) {
     .filter(Boolean);
   const ownerProfile = profileMap[row.user_id] || {};
   const ownerName = ownerProfile.display_name || ownerProfile.email || "发布者";
+  const ownerAvatar = ownerProfile.avatar_url || "";
   const images = [...new Set([...(imageMap[row.id] || []), ...normalizeImages(row.image_url)])];
   return {
     id: row.id,
@@ -340,6 +346,7 @@ function dbListingToUi(row, profileMap = {}, imageMap = {}) {
     moveIn: row.move_in || "",
     contact: row.contact || "站内消息",
     owner: ownerName,
+    ownerAvatar,
     ownerAccount: row.user_id,
     mine: row.user_id === currentUserId(),
     status: mapStatusFromDb(row.status),
@@ -369,10 +376,18 @@ function uiListingToDb(listing) {
 async function fetchProfilesMap(userIds = []) {
   const ids = [...new Set(userIds.filter(Boolean))];
   if (!cloudReady() || !ids.length) return {};
-  const { data, error } = await supabaseClient
+  let { data, error } = await supabaseClient
     .from("profiles")
-    .select("id,email,display_name,role")
+    .select("id,email,display_name,role,avatar_url")
     .in("id", ids);
+  if (error && /avatar_url/i.test(`${error.message || ""} ${error.details || ""}`)) {
+    const fallback = await supabaseClient
+      .from("profiles")
+      .select("id,email,display_name,role")
+      .in("id", ids);
+    data = fallback.data;
+    error = fallback.error;
+  }
   if (error) {
     console.warn("Failed to load profiles", error);
     return {};
@@ -948,7 +963,7 @@ function renderDetail(source) {
           <div class="mini-note">联系方式：${escapeHtml(item.contact || "站内消息")}</div>
           <div class="mini-note">建议先站内沟通，确认身份和细节后再交换私人联系方式。</div>
           <a class="seller-mini-card" href="${sellerUrl}">
-            <span class="seller-avatar">${sellerAvatar(item.owner)}</span>
+            <span class="seller-avatar">${avatarContent(item.owner, ownerAvatarFor(item))}</span>
             <span>
               <b>${escapeHtml(item.owner || "发布者")}</b>
               <em>${sellerPostCount} 条公开帖子 · 查看主页</em>
@@ -1081,7 +1096,7 @@ function renderSellerProfile(ownerAccount, filter = "all") {
     <section class="page-screen seller-screen">
       ${pageHeader("发帖者主页")}
       <section class="seller-profile-card">
-        <div class="seller-avatar large">${sellerAvatar(seller.owner)}</div>
+        <div class="seller-avatar large">${avatarContent(seller.owner, ownerAvatarFor(seller))}</div>
         <div class="seller-profile-main">
           <h2>${escapeHtml(seller.owner || "发布者")}</h2>
           <p>${escapeHtml(latestArea)} · ${posts.length} 条公开帖子</p>
@@ -1879,12 +1894,14 @@ async function completeSupabaseAuth(user, returnTo = "#home", displayName = "") 
   const email = normalizeAuthEmail(user.email);
   const profile = await ensureSupabaseProfile(user, displayName);
   const userName = profile?.display_name || displayName || user.user_metadata?.display_name || user.user_metadata?.name || (email ? email.split("@")[0] : "Saminest 用户");
+  const avatarUrl = profile?.avatar_url || user.user_metadata?.avatar_url || "";
   completeAuth(email || user.id, {
     name: userName,
     email,
     role: profile?.role || (email === ADMIN_EMAIL ? "admin" : "user"),
     provider: "supabase",
-    userId: user.id
+    userId: user.id,
+    avatarUrl
   }, returnTo);
   await refreshCloudData();
   route();
@@ -1922,8 +1939,9 @@ function completeAuth(account, savedAccount, returnTo) {
   };
   state.user = {
     name: userName,
-      subtitle: savedAccount?.subtitle || "Saminest",
-    avatar: (userName || account || "D").slice(0, 1).toUpperCase()
+    subtitle: savedAccount?.subtitle || "Saminest",
+    avatar: (userName || account || "D").slice(0, 1).toUpperCase(),
+    avatarUrl: savedAccount?.avatarUrl || ""
   };
   saveState();
   location.hash = returnTo || "#home";
@@ -1956,6 +1974,19 @@ function formatMetric(value) {
 
 function ownerAvatarFor(item) {
   return isOwner(item) ? state.user.avatarUrl : item.ownerAvatar || "";
+}
+
+function syncCurrentUserListingsProfile(updates = {}) {
+  const userId = currentUserId();
+  if (!userId) return;
+  state.listings = state.listings.map((item) => {
+    if (item.ownerAccount !== userId) return item;
+    return {
+      ...item,
+      owner: updates.name || item.owner,
+      ownerAvatar: updates.avatarUrl ?? item.ownerAvatar
+    };
+  });
 }
 
 function mobileHeader() {
@@ -2827,7 +2858,7 @@ async function saveProfileSettings(form) {
 
   if (cloudReady() && currentUserId()) {
     const { error: authError } = await supabaseClient.auth.updateUser({
-      data: { display_name: name, name }
+      data: { display_name: name, name, avatar_url: state.user.avatarUrl || "" }
     });
     if (authError) {
       window.alert(`资料保存失败：${authErrorMessage(authError)}`);
@@ -2853,6 +2884,7 @@ async function saveProfileSettings(form) {
     subtitle,
     avatar: state.user.avatarUrl ? state.user.avatar : name.slice(0, 1).toUpperCase()
   };
+  syncCurrentUserListingsProfile({ name, avatarUrl: state.user.avatarUrl || "" });
   saveState();
   window.alert("账号资料已保存。");
   renderSettings();
@@ -2866,12 +2898,31 @@ async function updateProfileAvatar(input) {
     return;
   }
   try {
-    const avatarUrl = await photoFileToDataUrl(file);
+    const avatarSource = await readFileAsDataUrl(file);
+    const avatarUrl = await resizeImageDataUrl(avatarSource, 240, 0.78);
+    if (cloudReady() && currentUserId()) {
+      const { error: authError } = await supabaseClient.auth.updateUser({
+        data: { avatar_url: avatarUrl }
+      });
+      if (authError) {
+        window.alert(`头像保存失败：${authErrorMessage(authError)}`);
+        return;
+      }
+      const { error: profileError } = await supabaseClient
+        .from("profiles")
+        .update({ avatar_url: avatarUrl })
+        .eq("id", currentUserId());
+      if (profileError) {
+        window.alert("头像已更新到当前账号，但资料表还缺少 avatar_url 字段。请先运行 supabase-profile-avatar-url.sql 后再保存头像。");
+        return;
+      }
+    }
     state.user = {
       ...state.user,
       avatarUrl,
       avatar: String(state.user.name || "华").slice(0, 1).toUpperCase()
     };
+    syncCurrentUserListingsProfile({ avatarUrl });
     saveState();
     if ((location.hash || "").startsWith("#settings-profile")) renderProfileSettings();
     else renderProfile();
@@ -3154,6 +3205,30 @@ document.addEventListener("submit", async (event) => {
 });
 
 document.addEventListener("click", async (event) => {
+  const removePhotoButton = event.target.closest("[data-remove-photo]");
+  if (removePhotoButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const form = removePhotoButton.closest("form");
+    const dataInput = form?.querySelector("[data-photo-data]");
+    const firstInput = form?.querySelector("[data-photo-first]");
+    const previewGrid = form?.querySelector("[data-photo-preview-grid]");
+    const placeholder = form?.querySelector("[data-photo-placeholder]");
+    const tile = form?.querySelector(".upload-tile");
+    if (!dataInput || !firstInput || !previewGrid || !placeholder || !tile) return;
+
+    const images = normalizeImages(dataInput.value);
+    const index = Number(removePhotoButton.dataset.removePhoto);
+    if (!Number.isInteger(index) || index < 0 || index >= images.length) return;
+    images.splice(index, 1);
+    dataInput.value = JSON.stringify(images);
+    firstInput.value = images[0] || "";
+    previewGrid.innerHTML = imagePreviewTemplate(images);
+    placeholder.textContent = images.length ? `已选 ${images.length} 张` : "+ 选择照片";
+    tile.classList.toggle("has-preview", images.length > 0);
+    return;
+  }
+
   const authScreenButton = event.target.closest("[data-auth-screen]");
   if (authScreenButton) {
     const form = authScreenButton.closest("form");
