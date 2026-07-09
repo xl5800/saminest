@@ -196,7 +196,21 @@ function timeAgo(value) {
   if (minutes < 60) return `${minutes}分钟前`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}小时前`;
-  return `${Math.floor(hours / 24)}天前`;
+  return formatMonthDay(time);
+}
+
+function formatMonthDay(value) {
+  const date = new Date(value || Date.now());
+  if (Number.isNaN(date.getTime())) return "";
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${month}-${day}`;
+}
+
+function displayListingTime(item = {}) {
+  const createdAt = Number(item.createdAt || 0);
+  if (createdAt > 100000000000) return formatMonthDay(createdAt);
+  return item.time || "刚刚";
 }
 
 function normalizeImages(value) {
@@ -736,8 +750,8 @@ function renderCategory(type, query = "", filters = {}) {
         <input name="q" value="${escapeHtml(query)}" placeholder="搜索关键词或地区" />
       </form>
       ${isRent ? FilterBar(activeFilters) : ""}
-      <div class="${isRent ? "housing-list" : "listing-list masonry-feed category-masonry-feed"}">
-        ${shown.length ? shown.map((item) => isRent ? HousingListCard(item) : MasonryCard(item, { favorite: true })).join("") : emptyBlock("没有找到相关帖子")}
+      <div class="listing-list masonry-feed category-masonry-feed">
+        ${shown.length ? shown.map((item) => MasonryCard(item, { favorite: true })).join("") : emptyBlock("没有找到相关帖子")}
       </div>
       ${bottomNav("home")}
     </section>
@@ -1881,8 +1895,8 @@ function HousingListCard(item) {
   return `
     <article class="housing-list-card" data-open-listing="${item.id}">
       <span class="housing-media">
-        <img src="${escapeHtml(coverImage)}" alt="${escapeHtml(item.title)}" loading="lazy" onerror="this.closest('.housing-media').classList.add('is-empty'); this.remove();" />
-        <span class="photo-count">${imageCount ? `图 ${imageCount}` : "房源"}</span>
+        <img src="${escapeHtml(coverImage)}" alt="${escapeHtml(item.title)}" loading="eager" decoding="async" onerror="this.onerror=()=>this.closest('.housing-media').classList.add('is-empty'); this.src='${escapeHtml(fallbackImages[item.type] || fallbackImages.used)}';" />
+        <span class="photo-count">${imageCount ? `图 ${imageCount}` : typeLabel(item.type)}</span>
       </span>
       <span class="housing-info">
         <span class="housing-title">${escapeHtml(item.title)}</span>
@@ -1894,7 +1908,7 @@ function HousingListCard(item) {
           <span>${escapeHtml(housingMoveIn(item))}</span>
         </span>
         <span class="housing-bottom">
-          <span>${escapeHtml(item.time || "刚刚")}</span>
+          <span>${escapeHtml(displayListingTime(item))}</span>
           <span class="listing-stats housing-favorite-stat">
             <button class="card-favorite-button ${favored ? "active" : ""}" type="button" data-favorite="${item.id}" aria-label="${favored ? "取消收藏" : "收藏"}">${favored ? "♥" : "♡"}</button>
             <span>${formatMetric(listingFavoriteCount(item))}</span>
@@ -1930,7 +1944,7 @@ function listingCard(item, options = {}) {
   return `
     <article class="${cardClasses}" data-open-listing="${item.id}">
       <span class="listing-media">
-        <img src="${escapeHtml(coverImage)}" alt="${escapeHtml(item.title)}" loading="lazy" onerror="this.closest('.listing-media').classList.add('is-empty'); this.remove();" />
+        <img src="${escapeHtml(coverImage)}" alt="${escapeHtml(item.title)}" loading="eager" decoding="async" onerror="this.onerror=()=>this.closest('.listing-media').classList.add('is-empty'); this.src='${escapeHtml(fallbackImages[item.type] || fallbackImages.used)}';" />
         <span class="photo-count">${imageCount ? `图 ${imageCount}` : typeLabel(item.type)}</span>
       </span>
       <span class="listing-content">
@@ -1941,7 +1955,7 @@ function listingCard(item, options = {}) {
         </span>
         <span class="listing-price-row">
           <span class="price">${escapeHtml(categoryPrimaryPrice(item))}</span>
-          <span class="listing-time">${escapeHtml(item.time || "刚刚")}</span>
+          <span class="listing-time">${escapeHtml(displayListingTime(item))}</span>
         </span>
         <span class="meta listing-tags">
           ${showStatus ? `<span class="status-badge ${status}">${statusLabel(status)}</span>` : ""}
