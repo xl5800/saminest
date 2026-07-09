@@ -89,20 +89,37 @@ const fallbackImages = {
 
 const app = document.querySelector("#app");
 const supabaseConfig = window.SAMINEST_SUPABASE_CONFIG || window.DMV_SUPABASE_CONFIG || {};
-const supabaseClient =
+let supabaseClient =
   window.supabase && supabaseConfig.url && supabaseConfig.anonKey
     ? window.supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey)
     : null;
+let supabaseLoadFailed = false;
 let state = loadState();
 ensureStateDefaults();
 
+function initializeSupabaseClient() {
+  if (!supabaseClient && window.supabase && supabaseConfig.url && supabaseConfig.anonKey) {
+    supabaseClient = window.supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey);
+  }
+  return supabaseClient;
+}
+
 function loadState() {
-  const saved = localStorage.getItem(STORAGE_KEY);
+  let saved = null;
+  try {
+    saved = localStorage.getItem(STORAGE_KEY);
+  } catch (error) {
+    console.warn("Local storage is unavailable; using temporary state", error);
+  }
   if (saved) {
     try {
       return JSON.parse(saved);
     } catch {
-      localStorage.removeItem(STORAGE_KEY);
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        // Continue with the built-in fallback state.
+      }
     }
   }
 
@@ -149,11 +166,25 @@ function ensureStateDefaults() {
 }
 
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.warn("Failed to persist local state", error);
+  }
 }
 
 function cloudReady() {
   return Boolean(supabaseClient?.auth);
+}
+
+function cloudConfigured() {
+  return Boolean(supabaseConfig.url && supabaseConfig.anonKey);
+}
+
+function cloudLoadingMessage(service = "登录") {
+  return supabaseLoadFailed
+    ? `${service}服务暂时不可用，请检查网络后刷新重试。`
+    : `${service}服务正在加载，请稍候再试。`;
 }
 
 function currentUserId() {
@@ -670,12 +701,20 @@ function findListing(id) {
   return item && canSeeListing(item) ? item : null;
 }
 
+function routePathFromLocation() {
+  const hashRoute = location.hash.replace(/^#\/?/, "");
+  if (hashRoute) return hashRoute;
+  const pathRoute = decodeURIComponent(location.pathname || "")
+    .replace(/^\/+|\/+$/g, "");
+  return !pathRoute || pathRoute === "index.html" ? "home" : pathRoute;
+}
+
 function route() {
   if (isPasswordRecoveryHash()) {
     return renderAuthPage("设置新密码", "#home", "reset");
   }
 
-  const hash = location.hash.replace(/^#\/?/, "") || "home";
+  const hash = routePathFromLocation();
   const [page, id, subpage] = hash.split("/");
   document.body.dataset.page = page;
   app.scrollTop = 0;
@@ -1232,11 +1271,13 @@ function renderWantedForm(source = {}) {
 
 function formShell(config, values = {}) {
   const previewImages = listingImages(values);
+  const formId = `listing-form-${config.kind}`;
+  const headerAction = values.id ? "保存" : "发布";
   return `
     <section class="page-screen form-page">
-      ${pageHeader(config.title)}
+      ${pageHeader(config.title, { submitFormId: formId, actionLabel: headerAction })}
       <p class="form-intro">${config.intro}</p>
-      <form data-listing-form="${config.kind}" data-editing-id="${values.id || ""}" data-draft-id="${values.draftId || ""}">
+      <form id="${formId}" data-listing-form="${config.kind}" data-editing-id="${values.id || ""}" data-draft-id="${values.draftId || ""}">
         <section class="form-card">
           <h2>${config.imageTitle}</h2>
           <div class="photo-strip multi">
@@ -1276,7 +1317,7 @@ function formShell(config, values = {}) {
         </section>
         <div class="sticky-submit">
           <button class="secondary-button" type="button" data-save-draft="${config.kind}">存草稿</button>
-          <button class="primary-button" type="submit">${config.submit}</button>
+          <button class="primary-button" type="submit" data-publish-submit>${config.submit}</button>
         </div>
       </form>
     </section>
@@ -2208,12 +2249,15 @@ function mobileHeader() {
   `;
 }
 
-function pageHeader(title) {
+function pageHeader(title, options = {}) {
+  const action = options.submitFormId
+    ? `<button class="page-header-action" type="submit" form="${escapeHtml(options.submitFormId)}" data-publish-submit>${escapeHtml(options.actionLabel || "发布")}</button>`
+    : `<a href="#publish">发布</a>`;
   return `
     <header class="page-header">
       <button class="plain-back" type="button" data-back>‹</button>
       <h1>${title}</h1>
-      <a href="#publish">发布</a>
+      ${action}
     </header>
   `;
 }
@@ -2606,6 +2650,49 @@ async function createConversation(listingId) {
   location.hash = `#conversation/${conversation.id}`;
 }
 
+function listingSubmitButtons(form) {
+  return [...document.querySelectorAll("[data-publish-submit]")]
+    .filter((button) => button.form === form);
+}
+
+function setListingSubmitting(form, loading) {
+  form.dataset.submitting = loading ? "true" : "false";
+  form.setAttribute("aria-busy", loading ? "true" : "false");
+  listingSubmitButtons(form).forEach((button) => {
+    if (loading) button.dataset.idleLabel = button.textContent;
+    button.disabled = loading;
+    button.textContent = loading ? "发布中..." : (button.dataset.idleLabel || button.textContent);
+  });
+}
+
+function validateListingForm(form) {
+  const titleInput = form.elements.title;
+  if (titleInput) {
+    titleInput.setCustomValidity(titleInput.value.trim() ? "" : "请先填写帖子标题");
+  }
+  if (form.checkValidity()) return true;
+  form.reportValidity();
+  const invalidField = form.querySelector(":invalid");
+  try {
+    invalidField?.focus({ preventScroll: true });
+  } catch {
+    invalidField?.focus();
+  }
+  invalidField?.scrollIntoView({ block: "center", inline: "nearest" });
+  return false;
+}
+
+function showAppNotice(message, tone = "success") {
+  document.querySelector("[data-app-notice]")?.remove();
+  const notice = document.createElement("div");
+  notice.className = `app-notice ${tone}`;
+  notice.dataset.appNotice = "";
+  notice.setAttribute("role", tone === "error" ? "alert" : "status");
+  notice.textContent = message;
+  document.body.appendChild(notice);
+  window.setTimeout(() => notice.remove(), 3200);
+}
+
 async function submitListing(form, type) {
   if (!isLoggedIn()) {
     renderAuthPage("登录后发布信息", "#publish");
@@ -2614,6 +2701,10 @@ async function submitListing(form, type) {
   if (currentAccountIsBanned()) {
     renderAuthPage("账号已被封禁，不能继续发布。", "#home");
     return;
+  }
+  if (state.session?.provider === "supabase" && cloudConfigured() && !cloudReady()) {
+    showAppNotice(cloudLoadingMessage("发布"), "error");
+    return false;
   }
   const editingId = form.dataset.editingId;
   const draftId = form.dataset.draftId;
@@ -2712,9 +2803,10 @@ async function submitListing(form, type) {
       state.drafts = state.drafts.filter((draft) => draft.id !== draftId);
     }
     await loadListingsFromSupabase();
+    showAppNotice(existing ? "修改已保存" : "发布成功，帖子已提交");
     location.hash = postUrl(savedListing.id);
     route();
-    return;
+    return true;
   }
 
   state.listings = existing
@@ -2724,7 +2816,9 @@ async function submitListing(form, type) {
     state.drafts = state.drafts.filter((draft) => draft.id !== draftId);
   }
   saveState();
+  showAppNotice(existing ? "修改已保存" : "发布成功，帖子已提交");
   location.hash = postUrl(listing.id);
+  return true;
 }
 
 function saveDraft(form, type) {
@@ -3185,6 +3279,19 @@ async function photoFileToDataUrl(file) {
   return resizeImageDataUrl(dataUrl);
 }
 
+document.addEventListener("input", (event) => {
+  if (event.target.closest?.("[data-listing-form]") && event.target.name === "title") {
+    event.target.setCustomValidity("");
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  const form = event.target.closest?.("[data-listing-form]");
+  if (!form || event.target.matches("textarea") || event.target.closest("[data-publish-submit]")) return;
+  event.preventDefault();
+});
+
 document.addEventListener("submit", async (event) => {
   const authForm = event.target.closest("[data-auth-form]");
   if (authForm) {
@@ -3192,6 +3299,11 @@ document.addEventListener("submit", async (event) => {
     const data = Object.fromEntries(new FormData(authForm).entries());
     const action = authForm.dataset.authAction || "login";
     const returnTo = data.returnTo || "#home";
+
+    if (cloudConfigured() && !cloudReady() && ["login", "register", "forgot", "reset"].includes(action)) {
+      showAuthError(authForm, cloudLoadingMessage("登录"));
+      return;
+    }
 
     if (action === "login") {
       const email = normalizeAuthEmail(data.email);
@@ -3397,7 +3509,16 @@ document.addEventListener("submit", async (event) => {
   const listingForm = event.target.closest("[data-listing-form]");
   if (listingForm) {
     event.preventDefault();
-    await submitListing(listingForm, listingForm.dataset.listingForm);
+    if (listingForm.dataset.submitting === "true" || !validateListingForm(listingForm)) return;
+    setListingSubmitting(listingForm, true);
+    try {
+      await submitListing(listingForm, listingForm.dataset.listingForm);
+    } catch (error) {
+      console.error("Failed to publish listing", error);
+      showAppNotice(`发布失败：${authErrorMessage(error)}`, "error");
+    } finally {
+      if (listingForm.isConnected) setListingSubmitting(listingForm, false);
+    }
     return;
   }
 
@@ -3654,7 +3775,11 @@ document.addEventListener("touchend", (event) => {
   moveDetailGallery(gallery, distance < 0 ? 1 : -1);
 }, { passive: true });
 
-if (hasSupabaseAuth()) {
+let supabaseAuthListenerBound = false;
+
+function bindSupabaseAuthListener() {
+  if (!hasSupabaseAuth() || supabaseAuthListenerBound) return;
+  supabaseAuthListenerBound = true;
   supabaseClient.auth.onAuthStateChange(async (event, session) => {
     if (event === "PASSWORD_RECOVERY") {
       renderAuthPage("设置新密码", "#home", "reset");
@@ -3672,6 +3797,62 @@ if (hasSupabaseAuth()) {
       saveState();
       if (!location.hash.startsWith("#auth")) route();
     }
+  });
+}
+
+bindSupabaseAuthListener();
+
+function installMobileViewportSizing() {
+  const root = document.documentElement;
+  const viewport = window.visualViewport;
+  let stableHeight = Math.round(viewport?.height || window.innerHeight || 0);
+  let authScrollBeforeKeyboard = 0;
+  let keyboardWasOpen = false;
+  let focusTimer = 0;
+
+  const isEditable = (element) => Boolean(element?.matches?.("input, textarea, select, [contenteditable='true']"));
+  const updateViewport = () => {
+    const activeElement = document.activeElement;
+    const editing = isEditable(activeElement);
+    const currentHeight = Math.round(viewport?.height || window.innerHeight || stableHeight);
+
+    if (!editing || currentHeight >= stableHeight * 0.82) {
+      stableHeight = Math.max(currentHeight, stableHeight || currentHeight);
+    }
+
+    const keyboardInset = editing ? Math.max(0, stableHeight - currentHeight) : 0;
+    const keyboardOpen = keyboardInset > 120;
+    root.style.setProperty("--app-height", `${stableHeight}px`);
+    root.style.setProperty("--visual-viewport-height", `${currentHeight}px`);
+    root.style.setProperty("--keyboard-inset", `${keyboardInset}px`);
+    document.body.classList.toggle("keyboard-open", keyboardOpen);
+
+    if (keyboardOpen && !keyboardWasOpen && document.body.dataset.page === "auth") {
+      authScrollBeforeKeyboard = app.scrollTop;
+    }
+    if (keyboardOpen && editing) {
+      window.clearTimeout(focusTimer);
+      focusTimer = window.setTimeout(() => {
+        activeElement.scrollIntoView({ block: "center", inline: "nearest", behavior: "auto" });
+      }, 40);
+    }
+    if (!keyboardOpen && keyboardWasOpen && document.body.dataset.page === "auth") {
+      app.scrollTo({ top: authScrollBeforeKeyboard, left: 0, behavior: "auto" });
+    }
+    keyboardWasOpen = keyboardOpen;
+  };
+
+  updateViewport();
+  viewport?.addEventListener("resize", updateViewport);
+  viewport?.addEventListener("scroll", updateViewport);
+  window.addEventListener("resize", updateViewport);
+  document.addEventListener("focusin", () => window.setTimeout(updateViewport, 60));
+  document.addEventListener("focusout", () => window.setTimeout(updateViewport, 180));
+  window.addEventListener("orientationchange", () => {
+    window.setTimeout(() => {
+      stableHeight = Math.round(viewport?.height || window.innerHeight || stableHeight);
+      updateViewport();
+    }, 260);
   });
 }
 
@@ -3735,15 +3916,46 @@ function installMobileViewportGuard() {
   }, { passive: false });
 }
 
+let cloudHydrationPromise = null;
+
+function hydrateCloudData() {
+  if (!cloudReady()) return Promise.resolve(false);
+  if (cloudHydrationPromise) return cloudHydrationPromise;
+  cloudHydrationPromise = (async () => {
+    try {
+      await syncSupabaseSession();
+      await refreshCloudData();
+      return true;
+    } catch (error) {
+      console.warn("Cloud startup failed; continuing with cached data", error);
+      return false;
+    } finally {
+      route();
+      cloudHydrationPromise = null;
+    }
+  })();
+  return cloudHydrationPromise;
+}
+
+window.addEventListener("saminest:supabase-ready", () => {
+  supabaseLoadFailed = false;
+  initializeSupabaseClient();
+  bindSupabaseAuthListener();
+  void hydrateCloudData();
+});
+
+window.addEventListener("saminest:supabase-error", () => {
+  supabaseLoadFailed = true;
+  const authForm = document.querySelector("[data-auth-form]");
+  if (authForm) showAuthError(authForm, cloudLoadingMessage("登录"));
+});
+
 window.addEventListener("hashchange", route);
-window.addEventListener("DOMContentLoaded", async () => {
+window.addEventListener("DOMContentLoaded", () => {
+  installMobileViewportSizing();
   installMobileViewportGuard();
-  if (/^#\/?(post|listing)\//.test(location.hash || "")) {
-    renderLoading("帖子加载中...");
-  }
-  await syncSupabaseSession();
-  await refreshCloudData();
   route();
+  void hydrateCloudData();
 });
 
 

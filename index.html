@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
     <title>Saminest | DMV 华语租房、二手与本地信息</title>
     <meta
       name="description"
@@ -78,8 +79,13 @@
       </nav>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="supabase-config.js"></script>
-    <script src="app.js"></script>
+    <script src="/supabase-config.js"></script>
+    <script src="/app.js"></script>
+    <script
+      async
+      src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"
+      onload="window.dispatchEvent(new Event('saminest:supabase-ready'))"
+      onerror="window.dispatchEvent(new Event('saminest:supabase-error'))"
+    ></script>
   </body>
 </html>

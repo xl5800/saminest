@@ -1,0 +1,32 @@
+{
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/post/:id", "destination": "/index.html" },
+    { "source": "/listing/:id", "destination": "/index.html" },
+    { "source": "/seller/:id/:filter", "destination": "/index.html" },
+    { "source": "/seller/:id", "destination": "/index.html" },
+    { "source": "/category/:type", "destination": "/index.html" },
+    { "source": "/conversation/:id", "destination": "/index.html" },
+    { "source": "/auth/:mode", "destination": "/index.html" },
+    { "source": "/publish", "destination": "/index.html" },
+    { "source": "/post-rent", "destination": "/index.html" },
+    { "source": "/post-wanted", "destination": "/index.html" },
+    { "source": "/post-used", "destination": "/index.html" },
+    { "source": "/messages", "destination": "/index.html" },
+    { "source": "/me", "destination": "/index.html" },
+    { "source": "/me-posts", "destination": "/index.html" },
+    { "source": "/drafts", "destination": "/index.html" },
+    { "source": "/favorites", "destination": "/index.html" },
+    { "source": "/history", "destination": "/index.html" },
+    { "source": "/feedback", "destination": "/index.html" },
+    { "source": "/help", "destination": "/index.html" },
+    { "source": "/settings", "destination": "/index.html" },
+    { "source": "/settings-profile", "destination": "/index.html" },
+    { "source": "/terms", "destination": "/index.html" },
+    { "source": "/privacy", "destination": "/index.html" },
+    { "source": "/admin-review/:status", "destination": "/index.html" },
+    { "source": "/admin-feedback", "destination": "/index.html" },
+    { "source": "/admin-reports", "destination": "/index.html" }
+  ]
+}
