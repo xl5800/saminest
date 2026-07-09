@@ -215,9 +215,14 @@ function normalizeImages(value) {
 }
 
 function listingImages(item = {}) {
-  const explicitImages = [...normalizeImages(item.images), ...normalizeImages(item.imageDataUrls)];
+  const explicitImages = [
+    ...normalizeImages(item.images),
+    ...normalizeImages(item.imageDataUrls),
+    ...normalizeImages(item.imageUrls),
+    ...normalizeImages(item.image_url)
+  ];
   if (explicitImages.length) return [...new Set(explicitImages)];
-  const image = item.image || "";
+  const image = item.image || item.imageDataUrl || item.coverImage || "";
   const isFallback = Object.values(fallbackImages).includes(image);
   return image && (!isFallback || item.photoCount) ? [image] : [];
 }
@@ -539,6 +544,11 @@ function publicListings() {
   return sortListings(state.listings.filter((item) => listingStatus(item) === "active" && !state.bannedUsers.includes(item.ownerAccount)));
 }
 
+function publicSellerListings(ownerAccount) {
+  const ownerId = decodeURIComponent(ownerAccount || "");
+  return publicListings().filter((item) => item.ownerAccount === ownerId);
+}
+
 function adminListings() {
   return sortListings(state.listings);
 }
@@ -558,7 +568,7 @@ function route() {
   }
 
   const hash = location.hash.replace("#", "") || "home";
-  const [page, id] = hash.split("/");
+  const [page, id, subpage] = hash.split("/");
   document.body.dataset.page = page;
 
   if (page === "auth") {
@@ -575,6 +585,7 @@ function route() {
   if (page === "home") return renderHome();
   if (page === "category") return renderCategory(id || "all");
   if (page === "listing") return renderDetail(id);
+  if (page === "seller") return renderSellerProfile(id, subpage || "all");
   if (page === "publish") return renderPublish();
   if (page === "post-used") return renderUsedForm();
   if (page === "post-rent") return renderRentForm();
@@ -736,15 +747,14 @@ function renderDetail(id) {
   const canReport = !isOwner(item) && !isAdmin();
   const detailImages = listingImages(item);
   const galleryImages = detailImages.length ? detailImages : [item.image];
+  const sellerUrl = sellerProfileUrl(item.ownerAccount);
+  const sellerPostCount = publicSellerListings(item.ownerAccount).length;
 
   app.innerHTML = `
     <section class="page-screen">
       ${pageHeader("详情")}
       <div class="detail-layout">
-        <div class="detail-gallery">
-          ${galleryImages.map((src, index) => `<img class="detail-photo ${index ? "secondary" : ""}" src="${escapeHtml(src)}" alt="${escapeHtml(item.title)} 图片 ${index + 1}" />`).join("")}
-          ${galleryImages.length > 1 ? `<span class="detail-gallery-count">共 ${galleryImages.length} 张图片</span>` : ""}
-        </div>
+        ${detailGalleryTemplate(galleryImages, item)}
         <article class="detail-panel">
           <div class="detail-title-row">
             <h1>${item.title}</h1>
@@ -761,6 +771,14 @@ function renderDetail(id) {
           </div>
           <p class="body-copy">${item.desc}</p>
           <div class="mini-note">建议先站内沟通，确认身份和细节后再交换私人联系方式。</div>
+          <a class="seller-mini-card" href="${sellerUrl}">
+            <span class="seller-avatar">${sellerAvatar(item.owner)}</span>
+            <span>
+              <b>${escapeHtml(item.owner || "发布者")}</b>
+              <em>${sellerPostCount} 条公开帖子 · 查看主页</em>
+            </span>
+            <strong>›</strong>
+          </a>
           <div class="detail-actions">
             <a class="secondary-button" href="#category/all">继续浏览</a>
             <button class="primary-button" type="button" data-contact="${item.id}">联系发布者</button>
@@ -774,6 +792,135 @@ function renderDetail(id) {
           </div>
         </article>
       </div>
+    </section>
+  `;
+}
+
+function detailGalleryTemplate(images, item) {
+  const cleanImages = images.filter(Boolean);
+  const galleryImages = cleanImages.length ? cleanImages : [fallbackImages[item.type] || fallbackImages.used];
+  const total = galleryImages.length;
+  return `
+    <div class="detail-gallery detail-carousel" data-detail-gallery data-gallery-index="0">
+      <div class="detail-carousel-track" data-gallery-track>
+        ${galleryImages.map((src, index) => `
+          <figure class="detail-carousel-slide">
+            <img class="detail-photo" src="${escapeHtml(src)}" alt="${escapeHtml(item.title)} 图片 ${index + 1}" />
+          </figure>
+        `).join("")}
+      </div>
+      ${total > 1 ? `
+        <span class="detail-gallery-count" data-gallery-count>1/${total}</span>
+        <button class="detail-gallery-nav prev is-disabled" type="button" data-gallery-action="prev" aria-label="上一张图片">‹</button>
+        <button class="detail-gallery-nav next" type="button" data-gallery-action="next" aria-label="下一张图片">›</button>
+        <div class="detail-gallery-dots" aria-label="图片分页">
+          ${galleryImages.map((_, index) => `<button class="${index === 0 ? "active" : ""}" type="button" data-gallery-dot="${index}" aria-label="第 ${index + 1} 张图片"></button>`).join("")}
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function updateDetailGallery(gallery, nextIndex) {
+  if (!gallery) return;
+  const track = gallery.querySelector("[data-gallery-track]");
+  const slides = [...gallery.querySelectorAll(".detail-carousel-slide")];
+  if (!track || !slides.length) return;
+  const maxIndex = slides.length - 1;
+  const index = Math.max(0, Math.min(maxIndex, Number(nextIndex) || 0));
+  gallery.dataset.galleryIndex = String(index);
+  track.style.transform = `translateX(-${index * 100}%)`;
+  const count = gallery.querySelector("[data-gallery-count]");
+  if (count) count.textContent = `${index + 1}/${slides.length}`;
+  gallery.querySelectorAll("[data-gallery-dot]").forEach((dot) => {
+    dot.classList.toggle("active", Number(dot.dataset.galleryDot) === index);
+  });
+  gallery.querySelector('[data-gallery-action="prev"]')?.classList.toggle("is-disabled", index === 0);
+  gallery.querySelector('[data-gallery-action="next"]')?.classList.toggle("is-disabled", index === maxIndex);
+}
+
+function moveDetailGallery(gallery, step) {
+  const currentIndex = Number(gallery?.dataset.galleryIndex || 0);
+  updateDetailGallery(gallery, currentIndex + step);
+}
+
+function sellerAvatar(name = "发") {
+  return escapeHtml(String(name || "发").trim().slice(0, 1).toUpperCase() || "发");
+}
+
+function sellerProfileUrl(ownerAccount) {
+  return ownerAccount ? `#seller/${encodeURIComponent(ownerAccount)}` : "#category/all";
+}
+
+function sellerFilterLabel(filter) {
+  return {
+    all: "全部",
+    rent: "租房",
+    used: "二手",
+    wanted: "求租"
+  }[filter] || "全部";
+}
+
+function sellerProfileTab(ownerAccount, filter, currentFilter, count) {
+  const href = `#seller/${encodeURIComponent(ownerAccount)}/${filter}`;
+  return `<a class="${filter === currentFilter ? "active" : ""}" href="${href}">${sellerFilterLabel(filter)}<span>${count}</span></a>`;
+}
+
+function renderSellerProfile(ownerAccount, filter = "all") {
+  const sellerId = decodeURIComponent(ownerAccount || "");
+  if (!sellerId) return renderUnavailable();
+
+  const posts = publicSellerListings(sellerId);
+  if (!posts.length) {
+    app.innerHTML = `
+      <section class="page-screen seller-screen">
+        ${pageHeader("发帖者主页")}
+        <section class="subpage-card">
+          <p>这个发帖者目前没有公开帖子。</p>
+          <a class="primary-button" href="#category/all">继续浏览</a>
+        </section>
+        ${bottomNav("category")}
+      </section>
+    `;
+    return;
+  }
+
+  const currentFilter = ["all", "rent", "used", "wanted"].includes(filter) ? filter : "all";
+  const seller = posts[0];
+  const filteredPosts = currentFilter === "all" ? posts : posts.filter((item) => item.type === currentFilter);
+  const typeCounts = {
+    all: posts.length,
+    rent: posts.filter((item) => item.type === "rent").length,
+    used: posts.filter((item) => item.type === "used").length,
+    wanted: posts.filter((item) => item.type === "wanted").length
+  };
+  const latestArea = seller.area || "DMV";
+  const contactPost = filteredPosts[0] || posts[0];
+
+  app.innerHTML = `
+    <section class="page-screen seller-screen">
+      ${pageHeader("发帖者主页")}
+      <section class="seller-profile-card">
+        <div class="seller-avatar large">${sellerAvatar(seller.owner)}</div>
+        <div class="seller-profile-main">
+          <h2>${escapeHtml(seller.owner || "发布者")}</h2>
+          <p>${escapeHtml(latestArea)} · ${posts.length} 条公开帖子</p>
+          <div class="seller-profile-actions">
+            <button class="primary-button" type="button" data-contact="${contactPost.id}">联系发帖者</button>
+            <a class="secondary-button" href="#listing/${contactPost.id}">查看最新帖子</a>
+          </div>
+        </div>
+      </section>
+      <nav class="seller-tabs" aria-label="发帖者帖子分类">
+        ${sellerProfileTab(sellerId, "all", currentFilter, typeCounts.all)}
+        ${sellerProfileTab(sellerId, "rent", currentFilter, typeCounts.rent)}
+        ${sellerProfileTab(sellerId, "used", currentFilter, typeCounts.used)}
+        ${sellerProfileTab(sellerId, "wanted", currentFilter, typeCounts.wanted)}
+      </nav>
+      <section class="seller-posts">
+        ${filteredPosts.length ? filteredPosts.map((item) => listingCard(item, { compact: true, favorite: true })).join("") : emptyBlock(`暂无${sellerFilterLabel(currentFilter)}帖子`)}
+      </section>
+      ${bottomNav("category")}
     </section>
   `;
 }
@@ -2720,6 +2867,19 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  const galleryAction = event.target.closest("[data-gallery-action]");
+  if (galleryAction) {
+    const gallery = galleryAction.closest("[data-detail-gallery]");
+    moveDetailGallery(gallery, galleryAction.dataset.galleryAction === "next" ? 1 : -1);
+    return;
+  }
+
+  const galleryDot = event.target.closest("[data-gallery-dot]");
+  if (galleryDot) {
+    updateDetailGallery(galleryDot.closest("[data-detail-gallery]"), Number(galleryDot.dataset.galleryDot));
+    return;
+  }
+
   const favorite = event.target.closest("[data-favorite]");
   if (favorite) {
     await toggleFavorite(favorite.dataset.favorite);
@@ -2861,6 +3021,23 @@ document.addEventListener("change", async (event) => {
     window.alert("图片读取失败，请换一张照片再试。");
   }
 });
+
+document.addEventListener("touchstart", (event) => {
+  const gallery = event.target.closest("[data-detail-gallery]");
+  if (!gallery || event.touches.length !== 1) return;
+  gallery.dataset.touchStartX = String(event.touches[0].clientX);
+}, { passive: true });
+
+document.addEventListener("touchend", (event) => {
+  const gallery = event.target.closest("[data-detail-gallery]");
+  if (!gallery || !gallery.dataset.touchStartX) return;
+  const startX = Number(gallery.dataset.touchStartX);
+  delete gallery.dataset.touchStartX;
+  const endX = event.changedTouches[0]?.clientX || startX;
+  const distance = endX - startX;
+  if (Math.abs(distance) < 42) return;
+  moveDetailGallery(gallery, distance < 0 ? 1 : -1);
+}, { passive: true });
 
 if (hasSupabaseAuth()) {
   supabaseClient.auth.onAuthStateChange(async (event, session) => {
