@@ -767,10 +767,9 @@ function renderDetail(id) {
   const item = findListing(id);
   if (!item) return renderUnavailable();
   rememberHistory(item.id);
-  const favored = state.favorites.includes(item.id);
   const canReport = !isOwner(item) && !isAdmin();
   const detailImages = listingImages(item);
-  const galleryImages = detailImages.length ? detailImages : [item.image];
+  const galleryImages = detailImages;
   const sellerUrl = sellerProfileUrl(item.ownerAccount);
   const sellerPostCount = publicSellerListings(item.ownerAccount).length;
 
@@ -782,9 +781,6 @@ function renderDetail(id) {
         <article class="detail-panel">
           <div class="detail-title-row">
             <h1>${item.title}</h1>
-            <button class="favorite-button ${favored ? "active" : ""}" type="button" data-favorite="${item.id}">
-              ${favored ? "已收藏" : "♡ 收藏"}
-            </button>
           </div>
           <div class="price">${item.price}</div>
           <div class="meta">
@@ -822,7 +818,10 @@ function renderDetail(id) {
 
 function detailGalleryTemplate(images, item) {
   const cleanImages = images.filter(Boolean);
-  const galleryImages = cleanImages.length ? cleanImages : [fallbackImages[item.type] || fallbackImages.used];
+  if (!cleanImages.length) {
+    return `<div class="detail-gallery detail-empty-photo">暂无图片</div>`;
+  }
+  const galleryImages = cleanImages;
   const total = galleryImages.length;
   return `
     <div class="detail-gallery detail-carousel" data-detail-gallery data-gallery-index="0">
@@ -1786,10 +1785,6 @@ function listingMetricSeed(item, salt = 0) {
     .reduce((sum, char) => sum + char.charCodeAt(0), salt);
 }
 
-function listingViewCount(item) {
-  return Number(item?.views || item?.viewCount || 80 + (listingMetricSeed(item, 17) % 920));
-}
-
 function listingFavoriteCount(item) {
   const base = Number(item?.favoriteCount || item?.likes || 8 + (listingMetricSeed(item, 31) % 96));
   return state.favorites.includes(item.id) ? base + 1 : base;
@@ -1840,6 +1835,7 @@ function MasonryCard(item, options = {}) {
 }
 
 function HousingListCard(item) {
+  const favored = state.favorites.includes(item.id);
   const images = listingImages(item);
   const imageCount = images.length || item.photoCount || 0;
   const coverImage = images[0] || item.image || fallbackImages[item.type] || fallbackImages.used;
@@ -1860,7 +1856,10 @@ function HousingListCard(item) {
         </span>
         <span class="housing-bottom">
           <span>${escapeHtml(item.time || "刚刚")}</span>
-          <span>♡ ${formatMetric(listingFavoriteCount(item))} · 看 ${formatMetric(listingViewCount(item))}</span>
+          <span class="listing-stats housing-favorite-stat">
+            <button class="card-favorite-button ${favored ? "active" : ""}" type="button" data-favorite="${item.id}" aria-label="${favored ? "取消收藏" : "收藏"}">${favored ? "♥" : "♡"}</button>
+            <span>${formatMetric(listingFavoriteCount(item))}</span>
+          </span>
         </span>
       </span>
     </article>
@@ -1915,16 +1914,11 @@ function listingCard(item, options = {}) {
             <span class="listing-author-name">${escapeHtml(ownerName)}</span>
           </span>
           <span class="listing-stats">
-            <span>♡ ${formatMetric(listingFavoriteCount(item))}</span>
-            <span>看 ${formatMetric(listingViewCount(item))}</span>
+            ${options.favorite ? `<button class="card-favorite-button ${favored ? "active" : ""}" type="button" data-favorite="${item.id}" aria-label="${favored ? "取消收藏" : "收藏"}">${favored ? "♥" : "♡"}</button>` : `<span class="card-favorite-icon">♡</span>`}
+            <span>${formatMetric(listingFavoriteCount(item))}</span>
           </span>
         </span>
       </span>
-      ${options.favorite ? `
-        <button class="heart ${favored ? "active" : ""}" type="button" data-favorite="${item.id}" aria-label="${favored ? "取消收藏" : "收藏"}">
-          ${favored ? "♥" : "♡"}
-        </button>
-      ` : ""}
     </article>
   `;
 }

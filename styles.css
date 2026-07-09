@@ -5192,6 +5192,43 @@ body:not([data-page="auth"]) .home-search:focus-within {
   font-weight: 720;
 }
 
+.card-favorite-button,
+.card-favorite-icon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #8b847b;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.card-favorite-button {
+  cursor: pointer;
+}
+
+.card-favorite-button.active {
+  color: var(--primary);
+}
+
+.housing-favorite-stat {
+  gap: 3px;
+}
+
+.detail-empty-photo {
+  display: grid;
+  place-items: center;
+  min-height: 240px;
+  background: #f2eee7;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 720;
+}
+
 .home-feed.masonry-feed .heart {
   top: 8px !important;
   right: 8px !important;
