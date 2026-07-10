@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   --bg: #f4f7f8;
   --surface: #ffffff;
   --surface-soft: #eef5f5;
@@ -7460,5 +7460,140 @@ body:not([data-page="auth"]) .form-page .form-intro {
   .page-header .page-header-action {
     min-width: 48px;
     color: #e95f24 !important;
+  }
+}
+
+
+/* V19 fix: prevent iOS search focus from shifting the whole application horizontally */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  overflow-x: clip !important;
+  overscroll-behavior-x: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+.app-shell,
+.app-main,
+#app,
+.home-screen,
+.page-screen,
+.category-screen {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin-right: auto !important;
+  margin-left: auto !important;
+}
+
+.app-shell,
+.app-main,
+#app,
+.home-screen,
+.page-screen,
+.category-screen {
+  overflow-x: clip !important;
+}
+
+.home-search,
+.inner-search {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+.home-search input,
+.inner-search input,
+input,
+textarea,
+select {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  font-size: 16px !important;
+}
+
+.category-rent .home-search,
+.category-rent .filter-bar,
+.category-rent .housing-list,
+.category-wanted .category-masonry-feed,
+.category-used .category-masonry-feed,
+.category-all .category-masonry-feed {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.filter-bar {
+  display: flex !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin-right: 0 !important;
+  margin-left: 0 !important;
+  padding-right: 0 !important;
+  padding-left: 0 !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+}
+
+.filter-bar > label {
+  flex: 0 0 112px !important;
+  width: 112px !important;
+  min-width: 112px !important;
+  max-width: 112px !important;
+}
+
+.filter-bar select {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  font-size: 16px !important;
+}
+
+.home-chips,
+.category-tabs,
+.filters {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+}
+
+.home-feed,
+.category-masonry-feed,
+.listing-list {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+.home-bottom-nav {
+  max-width: calc(100% - 24px) !important;
+}
+
+@supports not (overflow: clip) {
+  html,
+  body,
+  .app-shell,
+  .app-main,
+  #app,
+  .home-screen,
+  .page-screen,
+  .category-screen {
+    overflow-x: hidden !important;
   }
 }
