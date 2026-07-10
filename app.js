@@ -711,7 +711,11 @@ function routePathFromLocation() {
 
 function route() {
   if (isPasswordRecoveryHash()) {
-    return renderAuthPage("设置新密码", "#home", "reset");
+    return renderAuthPage(
+      "设置新密码",
+      "#home",
+      "reset"
+    );
   }
 
   const hash = routePathFromLocation();
@@ -2018,25 +2022,82 @@ function recoveryParams() {
   const raw = [search, hash, hashQuery, hashRouteParams].filter(Boolean).join("&");
   return new URLSearchParams(raw);
 }
-
 async function ensureRecoverySession() {
-  if (!hasSupabaseAuth() || !isPasswordRecoveryHash()) return false;
-  const { data } = await supabaseClient.auth.getSession();
-  if (data?.session) return true;
-  const params = recoveryParams();
-  const code = params.get("code");
-  if (code && typeof supabaseClient.auth.exchangeCodeForSession === "function") {
-    const result = await supabaseClient.auth.exchangeCodeForSession(code);
-    if (result.data?.session && !result.error) return true;
+  if (!cloudReady()) return false;
+
+  try {
+    // 1. 先检查是否已经有有效 session
+    const {
+      data: sessionData,
+      error: sessionError
+    } = await supabaseClient.auth.getSession();
+
+    if (!sessionError && sessionData?.session?.user) {
+      return true;
+    }
+
+    const url = new URL(window.location.href);
+
+    // 2. 支持 PKCE code
+    const code = url.searchParams.get("code");
+
+    if (code) {
+      const {
+        data,
+        error
+      } = await supabaseClient.auth.exchangeCodeForSession(code);
+
+      if (error) {
+        console.error("Recovery code exchange failed:", error);
+      } else if (data?.session?.user) {
+        // 清除地址栏里的 code，防止重复交换
+        url.searchParams.delete("code");
+        window.history.replaceState(
+          {},
+          document.title,
+          `${url.pathname}${url.search}${url.hash}`
+        );
+
+        return true;
+      }
+    }
+
+    // 3. 兼容旧版 hash token 链接
+    const hashParams = new URLSearchParams(
+      window.location.hash.replace(/^#/, "")
+    );
+
+    const accessToken = hashParams.get("access_token");
+    const refreshToken = hashParams.get("refresh_token");
+
+    if (accessToken && refreshToken) {
+      const {
+        data,
+        error
+      } = await supabaseClient.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken
+      });
+
+      if (error) {
+        console.error("Recovery token session failed:", error);
+      } else if (data?.session?.user) {
+        return true;
+      }
+    }
+
+    // 4. 再等待一次 Supabase 自动解析链接
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    const {
+      data: retryData
+    } = await supabaseClient.auth.getSession();
+
+    return Boolean(retryData?.session?.user);
+  } catch (error) {
+    console.error("ensureRecoverySession failed:", error);
+    return false;
   }
-  const accessToken = params.get("access_token");
-  const refreshToken = params.get("refresh_token");
-  if (!accessToken || !refreshToken) return false;
-  const result = await supabaseClient.auth.setSession({
-    access_token: accessToken,
-    refresh_token: refreshToken
-  });
-  return Boolean(result.data?.session && !result.error);
 }
 
 function normalizeAuthEmail(value) {
@@ -2160,24 +2221,42 @@ async function completeSupabaseAuth(user, returnTo = "#home", displayName = "") 
 }
 
 async function syncSupabaseSession() {
-  if (!hasSupabaseAuth()) return;
+  if (!hasSupabaseAuth()) return false;
+
   if (isPasswordRecoveryHash()) {
-    await ensureRecoverySession();
-    renderAuthPage("设置新密码", "#home", "reset");
-    return;
+    const recoveryReady = await ensureRecoverySession();
+
+    document.body.dataset.recoveryReady =
+      recoveryReady ? "true" : "false";
+
+    return recoveryReady;
   }
-  const { data } = await supabaseClient.auth.getSession();
+
+  const { data, error } = await supabaseClient.auth.getSession();
+
+  if (error) {
+    console.warn("Failed to read Supabase session", error);
+    return false;
+  }
+
   if (data?.session?.user) {
     const currentHash = location.hash || "#home";
-    await completeSupabaseAuth(data.session.user, currentHash.startsWith("#auth") ? "#home" : currentHash);
-    return;
+
+    await completeSupabaseAuth(
+      data.session.user,
+      currentHash.startsWith("#auth") ? "#home" : currentHash
+    );
+
+    return true;
   }
+
   if (state.session?.provider === "supabase") {
     state.session = { loggedIn: false };
     saveState();
   }
-}
 
+  return false;
+}
 function completeAuth(account, savedAccount, returnTo) {
   const userName = savedAccount?.name || `用户${String(account).slice(-4)}` || "Saminest 用户";
   const role = savedAccount?.role || (String(account).toLowerCase().includes("admin") ? "admin" : "user");
@@ -3452,12 +3531,18 @@ document.addEventListener("submit", async (event) => {
       }
       if (cloudReady()) {
         setAuthLoading(authForm, true, "正在修改...");
-        const hasRecoverySession = await ensureRecoverySession();
-        if (!hasRecoverySession && !isLoggedIn()) {
-          setAuthLoading(authForm, false);
-          showAuthError(authForm, "请先打开邮箱里的重置链接，再设置新密码。");
-          return;
-        }
+       const hasRecoverySession = await ensureRecoverySession();
+
+if (!hasRecoverySession) {
+  setAuthLoading(authForm, false);
+
+  showAuthError(
+    authForm,
+    "重置链接无效或已经过期，请重新发送一封重置邮件，并使用 Safari 打开最新链接。"
+  );
+
+  return;
+}
         const { error } = await supabaseClient.auth.updateUser({ password });
         setAuthLoading(authForm, false);
         if (error) {
@@ -3921,19 +4006,29 @@ let cloudHydrationPromise = null;
 function hydrateCloudData() {
   if (!cloudReady()) return Promise.resolve(false);
   if (cloudHydrationPromise) return cloudHydrationPromise;
+
   cloudHydrationPromise = (async () => {
     try {
       await syncSupabaseSession();
-      await refreshCloudData();
+
+      if (!isPasswordRecoveryHash()) {
+        await refreshCloudData();
+      }
+
       return true;
     } catch (error) {
-      console.warn("Cloud startup failed; continuing with cached data", error);
+      console.warn(
+        "Cloud startup failed; continuing with cached data",
+        error
+      );
+
       return false;
     } finally {
       route();
       cloudHydrationPromise = null;
     }
   })();
+
   return cloudHydrationPromise;
 }
 
