@@ -7597,3 +7597,205 @@ select {
     overflow-x: hidden !important;
   }
 }
+
+
+/* =========================================================
+   V20 iOS Safari auth keyboard stability
+   Keeps the login page anchored when the software keyboard opens.
+   ========================================================= */
+@media (max-width: 759px) {
+  html,
+  body {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    -webkit-text-size-adjust: 100% !important;
+  }
+
+  body[data-page="auth"] {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: var(--app-height, 100dvh) !important;
+    max-height: var(--app-height, 100dvh) !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+  }
+
+  body[data-page="auth"] .app-shell,
+  body[data-page="auth"] .app-main,
+  body[data-page="auth"] #app {
+    position: relative !important;
+    width: 100% !important;
+    max-width: 430px !important;
+    height: var(--app-height, 100dvh) !important;
+    max-height: var(--app-height, 100dvh) !important;
+    min-height: 0 !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
+  body[data-page="auth"] .auth-screen,
+  body[data-page="auth"] .auth-v2-screen {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: var(--app-height, 100dvh) !important;
+    min-height: 0 !important;
+    max-height: var(--app-height, 100dvh) !important;
+    padding:
+      max(10px, env(safe-area-inset-top))
+      22px
+      max(24px, env(safe-area-inset-bottom)) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+    transform: none !important;
+    translate: none !important;
+  }
+
+  body[data-page="auth"] .auth-v2-card,
+  body[data-page="auth"] .auth-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-right: auto !important;
+    margin-left: auto !important;
+    transform: none !important;
+    translate: none !important;
+  }
+
+  body[data-page="auth"] input,
+  body[data-page="auth"] textarea,
+  body[data-page="auth"] select {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    font-size: 16px !important;
+    transform: none !important;
+  }
+
+  body[data-page="auth"] .auth-row-between {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 16px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  body[data-page="auth"] .auth-row-between label {
+    display: inline-flex !important;
+    flex: 0 0 auto !important;
+    align-items: center !important;
+    gap: 8px !important;
+    width: auto !important;
+    min-width: max-content !important;
+    white-space: nowrap !important;
+    writing-mode: horizontal-tb !important;
+  }
+
+  body[data-page="auth"] .auth-row-between a {
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+  }
+
+  /* Do not reflow or compress the form when the keyboard appears. */
+  body.keyboard-open[data-page="auth"] .app-shell,
+  body.keyboard-open[data-page="auth"] .app-main,
+  body.keyboard-open[data-page="auth"] #app,
+  body.keyboard-open[data-page="auth"] .auth-screen,
+  body.keyboard-open[data-page="auth"] .auth-v2-screen {
+    height: var(--app-height, 100dvh) !important;
+    max-height: var(--app-height, 100dvh) !important;
+  }
+
+  body.keyboard-open[data-page="auth"] .auth-v2-topbar,
+  body.keyboard-open[data-page="auth"] .auth-topbar,
+  body.keyboard-open[data-page="auth"] .auth-brand-v2,
+  body.keyboard-open[data-page="auth"] .auth-title-block,
+  body.keyboard-open[data-page="auth"] .auth-v2-card,
+  body.keyboard-open[data-page="auth"] .auth-card {
+    transform: none !important;
+    translate: none !important;
+  }
+}
+
+
+
+/* =========================================================
+   Final iOS auth keyboard lock — keep login layout stationary
+   ========================================================= */
+@media (max-width: 759px) {
+  html,
+  body {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    overscroll-behavior-x: none !important;
+  }
+
+  body[data-page="auth"] {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: var(--app-height, 100dvh) !important;
+    overflow: hidden !important;
+  }
+
+  body[data-page="auth"] .app-shell,
+  body[data-page="auth"] .app-main,
+  body[data-page="auth"] #app {
+    width: 100% !important;
+    max-width: 430px !important;
+    height: var(--app-height, 100dvh) !important;
+    min-height: 0 !important;
+    margin: 0 auto !important;
+    overflow: hidden !important;
+  }
+
+  body[data-page="auth"] .auth-screen,
+  body[data-page="auth"] .auth-v2-screen {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: var(--app-height, 100dvh) !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: none !important;
+    scroll-behavior: auto !important;
+    transform: none !important;
+    translate: none !important;
+  }
+
+  body.keyboard-open[data-page="auth"] .auth-screen,
+  body.keyboard-open[data-page="auth"] .auth-v2-screen {
+    height: var(--app-height, 100dvh) !important;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom)) !important;
+  }
+
+  body[data-page="auth"] input,
+  body[data-page="auth"] textarea,
+  body[data-page="auth"] select {
+    font-size: 16px !important;
+  }
+
+  body[data-page="auth"] .auth-row-between {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 16px !important;
+  }
+
+  body[data-page="auth"] .auth-row-between label,
+  body[data-page="auth"] .auth-row-between a {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: max-content !important;
+    white-space: nowrap !important;
+    writing-mode: horizontal-tb !important;
+  }
+}

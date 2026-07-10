@@ -3957,6 +3957,89 @@ window.addEventListener("DOMContentLoaded", () => {
   route();
   void hydrateCloudData();
 });
+/* =========================================
+   iOS Safari 登录页键盘稳定处理
+========================================= */
+
+(function setupStableMobileKeyboard() {
+  const viewport = window.visualViewport;
+
+  function isFormField(element) {
+    return (
+      element instanceof HTMLElement &&
+      element.matches("input, textarea, select")
+    );
+  }
+
+  function updateVisibleViewport() {
+    const visibleHeight = viewport
+      ? Math.round(viewport.height)
+      : window.innerHeight;
+
+    document.documentElement.style.setProperty(
+      "--visible-height",
+      `${visibleHeight}px`
+    );
+
+    const keyboardHeight = window.innerHeight - visibleHeight;
+    const keyboardOpen = keyboardHeight > 120;
+
+    document.body.classList.toggle("keyboard-open", keyboardOpen);
+
+    /*
+     * 防止 Safari 在键盘关闭后留下错误的横向位置。
+     * 不强制修改纵向位置，避免影响用户输入。
+     */
+    document.documentElement.scrollLeft = 0;
+    document.body.scrollLeft = 0;
+  }
+
+  function keepFocusedFieldVisible(event) {
+    if (!isFormField(event.target)) return;
+
+    window.setTimeout(() => {
+      event.target.scrollIntoView({
+        block: "nearest",
+        inline: "nearest",
+        behavior: "smooth"
+      });
+    }, 300);
+  }
+
+  function restoreAfterKeyboardClose(event) {
+    if (!isFormField(event.target)) return;
+
+    window.setTimeout(() => {
+      updateVisibleViewport();
+
+      document.documentElement.scrollLeft = 0;
+      document.body.scrollLeft = 0;
+    }, 350);
+  }
+
+  updateVisibleViewport();
+
+  window.addEventListener("resize", updateVisibleViewport, {
+    passive: true
+  });
+
+  window.addEventListener("orientationchange", () => {
+    window.setTimeout(updateVisibleViewport, 300);
+  });
+
+  document.addEventListener("focusin", keepFocusedFieldVisible);
+  document.addEventListener("focusout", restoreAfterKeyboardClose);
+
+  if (viewport) {
+    viewport.addEventListener("resize", updateVisibleViewport, {
+      passive: true
+    });
+
+    viewport.addEventListener("scroll", updateVisibleViewport, {
+      passive: true
+    });
+  }
+})();
 
 
 
