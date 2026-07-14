@@ -1,0 +1,17 @@
+{
+  "name": "saminest",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --configLoader runner",
+    "build": "vite build --configLoader runner",
+    "preview": "vite preview --configLoader runner",
+    "typecheck": "tsc --noEmit",
+    "check:legacy": "node --check app.js && node --check public/legacy-app.js"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "vite": "6.4.3"
+  }
+}
