@@ -8,10 +8,13 @@
     "build": "vite build --configLoader runner",
     "preview": "vite preview --configLoader runner",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run --configLoader runner",
     "check:legacy": "node --check app.js && node --check public/legacy-app.js"
   },
   "devDependencies": {
+    "jsdom": "26.1.0",
     "typescript": "6.0.3",
-    "vite": "6.4.3"
+    "vite": "6.4.3",
+    "vitest": "4.1.9"
   }
 }

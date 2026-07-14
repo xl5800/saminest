@@ -959,14 +959,7 @@ function currentRentFilters() {
 }
 
 function renderLoading(message = "加载中...") {
-  app.innerHTML = `
-    <section class="page-screen">
-      ${pageHeader("加载中")}
-      <section class="subpage-card">
-        <p>${escapeHtml(message)}</p>
-      </section>
-    </section>
-  `;
+  return window.SaminestModules.loading.renderLoading(app, pageHeader, message);
 }
 
 async function renderPostDetail(id) {
@@ -2762,14 +2755,7 @@ function validateListingForm(form) {
 }
 
 function showAppNotice(message, tone = "success") {
-  document.querySelector("[data-app-notice]")?.remove();
-  const notice = document.createElement("div");
-  notice.className = `app-notice ${tone}`;
-  notice.dataset.appNotice = "";
-  notice.setAttribute("role", tone === "error" ? "alert" : "status");
-  notice.textContent = message;
-  document.body.appendChild(notice);
-  window.setTimeout(() => notice.remove(), 3200);
+  return window.SaminestModules.toast.showAppNotice(message, tone);
 }
 
 async function submitListing(form, type) {
@@ -3317,9 +3303,7 @@ async function updateProfileAvatar(input) {
 }
 
 function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (char) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]
-  );
+  return window.SaminestModules.dom.escapeHtml(value);
 }
 
 function readFileAsDataUrl(file) {
