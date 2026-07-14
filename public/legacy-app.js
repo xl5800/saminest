@@ -1981,6 +1981,10 @@ function hasSupabaseAuth() {
   return Boolean(supabaseClient?.auth);
 }
 
+function authModule() {
+  return window.SaminestModules?.auth || null;
+}
+
 function authRedirectUrl(mode = "reset") {
   if (mode === "reset") return `${window.location.origin}${window.location.pathname}?auth=reset`;
   return `${window.location.origin}${window.location.pathname}#auth/${mode}`;
@@ -1991,18 +1995,24 @@ function emailRedirectUrl() {
 }
 
 function isSupabaseEmailVerified(user) {
-  return Boolean(user?.email_confirmed_at || user?.confirmed_at);
+  return authModule()?.isEmailVerified(user)
+    ?? Boolean(user?.email_confirmed_at || user?.confirmed_at);
 }
 
 function isPasswordRecoveryHash() {
+  const module = authModule();
+  if (module) return module.isPasswordRecoveryUrl(window.location.href);
   const hash = window.location.hash || "";
   const text = `${hash}&${window.location.search || ""}`;
   return /(^|[&#?])type=recovery(&|$)/.test(text)
     || /(^|[&#?])auth=reset(&|$)/.test(text)
-    || hash.startsWith("#auth/reset");
+    || hash.startsWith("#auth/reset")
+    || window.location.pathname.replace(/\/+$/, "").endsWith("/reset-password");
 }
 
 function recoveryParams() {
+  const module = authModule();
+  if (module) return module.recoveryParams(window.location.href);
   const hash = (window.location.hash || "").replace(/^#/, "");
   const search = (window.location.search || "").replace(/^\?/, "");
   const hashQueryIndex = hash.indexOf("?");
@@ -2012,85 +2022,14 @@ function recoveryParams() {
   return new URLSearchParams(raw);
 }
 async function ensureRecoverySession() {
-  if (!cloudReady()) return false;
-
-  try {
-    // 1. 先检查是否已经有有效 session
-    const {
-      data: sessionData,
-      error: sessionError
-    } = await supabaseClient.auth.getSession();
-
-    if (!sessionError && sessionData?.session?.user) {
-      return true;
-    }
-
-    const url = new URL(window.location.href);
-
-    // 2. 支持 PKCE code
-    const code = url.searchParams.get("code");
-
-    if (code) {
-      const {
-        data,
-        error
-      } = await supabaseClient.auth.exchangeCodeForSession(code);
-
-      if (error) {
-        console.error("Recovery code exchange failed:", error);
-      } else if (data?.session?.user) {
-        // 清除地址栏里的 code，防止重复交换
-        url.searchParams.delete("code");
-        window.history.replaceState(
-          {},
-          document.title,
-          `${url.pathname}${url.search}${url.hash}`
-        );
-
-        return true;
-      }
-    }
-
-    // 3. 兼容旧版 hash token 链接
-    const hashParams = new URLSearchParams(
-      window.location.hash.replace(/^#/, "")
-    );
-
-    const accessToken = hashParams.get("access_token");
-    const refreshToken = hashParams.get("refresh_token");
-
-    if (accessToken && refreshToken) {
-      const {
-        data,
-        error
-      } = await supabaseClient.auth.setSession({
-        access_token: accessToken,
-        refresh_token: refreshToken
-      });
-
-      if (error) {
-        console.error("Recovery token session failed:", error);
-      } else if (data?.session?.user) {
-        return true;
-      }
-    }
-
-    // 4. 再等待一次 Supabase 自动解析链接
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
-    const {
-      data: retryData
-    } = await supabaseClient.auth.getSession();
-
-    return Boolean(retryData?.session?.user);
-  } catch (error) {
-    console.error("ensureRecoverySession failed:", error);
-    return false;
-  }
+  if (!cloudReady() || !authModule()) return false;
+  const result = await authModule().ensureRecoverySession(authRecoveryOptions());
+  return Boolean(result.success && result.data.ready);
 }
 
 function normalizeAuthEmail(value) {
-  return String(value || "").trim().toLowerCase();
+  return authModule()?.normalizeEmail(value)
+    ?? String(value || "").trim().toLowerCase();
 }
 
 function localAccountForEmail(email) {
@@ -2157,115 +2096,140 @@ function renderAuthNotice(title, desc, returnTo = "#home", actionLabel = "返回
   `;
 }
 
-async function ensureSupabaseProfile(user, displayName = "") {
-  if (!cloudReady() || !user) return null;
-  const email = normalizeAuthEmail(user.email);
-  const role = email === ADMIN_EMAIL ? "admin" : "user";
-  const fallbackName = displayName || user.user_metadata?.display_name || user.user_metadata?.name || email.split("@")[0] || "Saminest 用户";
-  const payload = {
-    id: user.id,
-    email,
-    display_name: fallbackName,
-    role
-  };
-  const { data, error } = await supabaseClient
-    .from("profiles")
-    .upsert(payload, { onConflict: "id" })
-    .select()
-    .single();
-  if (error) {
-    console.warn("Failed to upsert profile", error);
-    return payload;
-  }
-  return data || payload;
+function replaceAuthUrl(url) {
+  window.history.replaceState({}, document.title, url);
 }
 
-async function completeSupabaseAuth(user, returnTo = "#home", displayName = "") {
-  if (!user) return;
-  if (!isSupabaseEmailVerified(user)) {
-    await supabaseClient.auth.signOut();
-    state.session = { loggedIn: false };
-    saveState();
-    renderAuthNotice(
-      "请先验证邮箱",
-      "请点击系统发送的确认链接后再登录。发件邮箱由 Supabase SMTP 设置控制。",
-      returnTo
-    );
+function authRecoveryOptions() {
+  return {
+    href: window.location.href,
+    replaceUrl: replaceAuthUrl
+  };
+}
+
+function navigateAuthOnce(returnTo = "#home") {
+  const target = returnTo || "#home";
+  if (location.hash === target) {
+    route();
     return;
   }
-  const email = normalizeAuthEmail(user.email);
-  const profile = await ensureSupabaseProfile(user, displayName);
-  const userName = profile?.display_name || displayName || user.user_metadata?.display_name || user.user_metadata?.name || (email ? email.split("@")[0] : "Saminest 用户");
-  const avatarUrl = profile?.avatar_url || user.user_metadata?.avatar_url || "";
-  completeAuth(email || user.id, {
-    name: userName,
-    email,
-    role: profile?.role || (email === ADMIN_EMAIL ? "admin" : "user"),
-    provider: "supabase",
-    userId: user.id,
-    avatarUrl
-  }, returnTo);
-  await refreshCloudData();
-  route();
+  location.hash = target;
+}
+
+function authFlowEffects() {
+  return {
+    async onAuthenticated(outcome, returnTo, mode) {
+      const applied = completeAuth(
+        outcome.account,
+        outcome.savedAccount,
+        returnTo,
+        { navigate: false }
+      );
+      if (!applied?.success) return;
+      if (mode === "restore") {
+        const target = returnTo || "#home";
+        if (location.hash !== target) {
+          replaceAuthUrl(`${location.pathname}${location.search}${target}`);
+        }
+        return;
+      }
+      await refreshCloudData();
+      navigateAuthOnce(returnTo);
+    },
+    onVerificationRequired(outcome) {
+      state.session = { loggedIn: false };
+      saveState();
+      const isRegistration = outcome.reason === "email-confirmation";
+      renderAuthNotice(
+        isRegistration ? "请验证邮箱" : "请先验证邮箱",
+        isRegistration
+          ? "请点击系统发送的确认链接后再回来登录。发件邮箱由 Supabase SMTP 设置控制。"
+          : "请点击系统发送的确认链接后再登录。发件邮箱由 Supabase SMTP 设置控制。",
+        outcome.returnTo
+      );
+    },
+    onSignedOut(options) {
+      const shouldClear = Boolean(
+        options.force
+        || options.target
+        || state.session?.provider === "supabase"
+      );
+      if (shouldClear) {
+        state.session = { loggedIn: false };
+        saveState();
+      }
+      if (!options.navigate || !shouldClear) return;
+      if (options.target) {
+        navigateAuthOnce(options.target);
+      } else if (!location.hash.startsWith("#auth")) {
+        route();
+      }
+    },
+    onRecovery() {
+      renderAuthPage("设置新密码", "#home", "reset");
+    },
+    onTokenRefreshed() {
+      // Supabase owns refreshed tokens; legacy state stores no token data.
+    },
+    onUserUpdated(user) {
+      if (
+        state.session?.provider !== "supabase"
+        || state.session?.userId !== user?.id
+      ) return;
+      const email = normalizeAuthEmail(user.email);
+      const name = user.user_metadata?.display_name || user.user_metadata?.name;
+      const avatarUrl = user.user_metadata?.avatar_url;
+      if (email) {
+        state.session.email = email;
+        state.session.account = email;
+      }
+      if (name) {
+        state.user.name = name;
+        state.user.avatar = String(name).slice(0, 1).toUpperCase();
+      }
+      if (typeof avatarUrl === "string") state.user.avatarUrl = avatarUrl;
+      saveState();
+    }
+  };
+}
+
+async function ensureSupabaseProfile(user, displayName = "") {
+  if (!cloudReady() || !user || !authModule()) return null;
+  const result = await authModule().ensureProfile(user, displayName, ADMIN_EMAIL);
+  return result.success ? result.data : null;
+}
+
+async function completeSupabaseAuth(user, returnTo = "#home", displayName = "", mode = "interactive") {
+  if (!user || !authModule()) return null;
+  return authModule().completeSupabaseAuth({
+    user,
+    returnTo,
+    displayName,
+    adminEmail: ADMIN_EMAIL,
+    mode
+  }, authFlowEffects());
 }
 
 async function syncSupabaseSession() {
-  if (!hasSupabaseAuth()) return false;
-
+  if (!hasSupabaseAuth() || !authModule()) return false;
+  const result = await authModule().syncSession({
+    ...authRecoveryOptions(),
+    adminEmail: ADMIN_EMAIL
+  }, authFlowEffects());
+  if (!result.success) return false;
   if (isPasswordRecoveryHash()) {
-    const recoveryReady = await ensureRecoverySession();
-
-    document.body.dataset.recoveryReady =
-      recoveryReady ? "true" : "false";
-
-    return recoveryReady;
+    document.body.dataset.recoveryReady = result.data.recovery ? "true" : "false";
   }
-
-  const { data, error } = await supabaseClient.auth.getSession();
-
-  if (error) {
-    console.warn("Failed to read Supabase session", error);
-    return false;
-  }
-
-  if (data?.session?.user) {
-    const currentHash = location.hash || "#home";
-
-    await completeSupabaseAuth(
-      data.session.user,
-      currentHash.startsWith("#auth") ? "#home" : currentHash
-    );
-
-    return true;
-  }
-
-  if (state.session?.provider === "supabase") {
-    state.session = { loggedIn: false };
-    saveState();
-  }
-
-  return false;
+  return result.data.authenticated || result.data.recovery;
 }
-function completeAuth(account, savedAccount, returnTo) {
-  const userName = savedAccount?.name || `用户${String(account).slice(-4)}` || "Saminest 用户";
-  const role = savedAccount?.role || (String(account).toLowerCase().includes("admin") ? "admin" : "user");
-  state.session = {
-    loggedIn: true,
-    account,
-    email: savedAccount?.email || account,
-    role,
-    provider: savedAccount?.provider || "local",
-    userId: savedAccount?.userId || ""
-  };
-  state.user = {
-    name: userName,
-    subtitle: savedAccount?.subtitle || "Saminest",
-    avatar: (userName || account || "D").slice(0, 1).toUpperCase(),
-    avatarUrl: savedAccount?.avatarUrl || ""
-  };
+function completeAuth(account, savedAccount, returnTo, options = {}) {
+  const result = authModule()?.createAuthState(account, savedAccount);
+  if (!result?.success) return result || null;
+  state.session = result.data.session;
+  state.user = result.data.user;
   saveState();
-  location.hash = returnTo || "#home";
-  route();
+  if (options.navigate !== false) navigateAuthOnce(returnTo || "#home");
+  return result;
 }
 
 function avatarContent(name = "华", imageUrl = "", fallback = "") {
@@ -3377,13 +3341,21 @@ document.addEventListener("submit", async (event) => {
       }
       if (cloudReady()) {
         setAuthLoading(authForm, true, "正在登录...");
-        const { data: authData, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-        setAuthLoading(authForm, false);
-        if (error) {
-          showAuthError(authForm, authErrorMessage(error));
+        let result;
+        try {
+          result = await authModule().signIn({
+            email,
+            password,
+            returnTo,
+            adminEmail: ADMIN_EMAIL
+          }, authFlowEffects());
+        } finally {
+          setAuthLoading(authForm, false);
+        }
+        if (!result?.success) {
+          showAuthError(authForm, result?.error?.message || cloudLoadingMessage("登录"));
           return;
         }
-        await completeSupabaseAuth(authData.user, returnTo);
         return;
       }
       const account = localAccountForEmail(email);
@@ -3417,28 +3389,23 @@ document.addEventListener("submit", async (event) => {
       }
       if (cloudReady()) {
         setAuthLoading(authForm, true, "正在创建...");
-        const { data: authData, error } = await supabaseClient.auth.signUp({
-          email,
-          password,
-          options: {
-            data: { display_name: name || email.split("@")[0] },
-            emailRedirectTo: emailRedirectUrl()
-          }
-        });
-        setAuthLoading(authForm, false);
-        if (error) {
-          showAuthError(authForm, authErrorMessage(error));
+        let result;
+        try {
+          result = await authModule().signUp({
+            email,
+            password,
+            displayName: name,
+            emailRedirectTo: emailRedirectUrl(),
+            returnTo,
+            adminEmail: ADMIN_EMAIL
+          }, authFlowEffects());
+        } finally {
+          setAuthLoading(authForm, false);
+        }
+        if (!result?.success) {
+          showAuthError(authForm, result?.error?.message || cloudLoadingMessage("注册"));
           return;
         }
-        if (authData.session?.user && isSupabaseEmailVerified(authData.session.user)) {
-          await completeSupabaseAuth(authData.session?.user || authData.user, returnTo, name);
-          return;
-        }
-        renderAuthNotice(
-          "请验证邮箱",
-            "请点击系统发送的确认链接后再回来登录。发件邮箱由 Supabase SMTP 设置控制。",
-          returnTo
-        );
         return;
       }
       if (localAccountForEmail(email)) {
@@ -3470,12 +3437,17 @@ document.addEventListener("submit", async (event) => {
       }
       if (cloudReady()) {
         setAuthLoading(authForm, true, "正在发送...");
-        const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-          redirectTo: authRedirectUrl("reset")
-        });
-        setAuthLoading(authForm, false);
-        if (error) {
-          showAuthError(authForm, authErrorMessage(error));
+        let result;
+        try {
+          result = await authModule().sendPasswordReset({
+            email,
+            redirectTo: authRedirectUrl("reset")
+          });
+        } finally {
+          setAuthLoading(authForm, false);
+        }
+        if (!result?.success) {
+          showAuthError(authForm, result?.error?.message || cloudLoadingMessage("登录"));
           return;
         }
         renderAuthNotice(
@@ -3511,27 +3483,23 @@ document.addEventListener("submit", async (event) => {
       }
       if (cloudReady()) {
         setAuthLoading(authForm, true, "正在修改...");
-       const hasRecoverySession = await ensureRecoverySession();
-
-if (!hasRecoverySession) {
-  setAuthLoading(authForm, false);
-
-  showAuthError(
-    authForm,
-    "重置链接无效或已经过期，请重新发送一封重置邮件，并使用 Safari 打开最新链接。"
-  );
-
-  return;
-}
-        const { error } = await supabaseClient.auth.updateUser({ password });
-        setAuthLoading(authForm, false);
-        if (error) {
-          showAuthError(authForm, authErrorMessage(error));
+        let result;
+        try {
+          result = await authModule().resetPassword({
+            ...authRecoveryOptions(),
+            password
+          }, authFlowEffects());
+        } finally {
+          setAuthLoading(authForm, false);
+        }
+        if (!result?.success) {
+          showAuthError(
+            authForm,
+            result?.error?.message
+              || "重置链接无效或已经过期，请重新发送一封重置邮件，并使用 Safari 打开最新链接。"
+          );
           return;
         }
-        await supabaseClient.auth.signOut();
-        state.session = { loggedIn: false };
-        saveState();
         renderAuthPage("修改成功", returnTo, "success");
         return;
       }
@@ -3767,13 +3735,13 @@ document.addEventListener("click", async (event) => {
 
   const logout = event.target.closest("[data-logout]");
   if (logout) {
-    if (hasSupabaseAuth()) {
-      await supabaseClient.auth.signOut();
+    if (hasSupabaseAuth() && authModule()) {
+      await authModule().signOut(authFlowEffects());
+      return;
     }
     state.session = { loggedIn: false };
     saveState();
-    location.hash = "#home";
-    route();
+    navigateAuthOnce("#home");
     return;
   }
 
@@ -3843,26 +3811,14 @@ document.addEventListener("touchend", (event) => {
 let supabaseAuthListenerBound = false;
 
 function bindSupabaseAuthListener() {
-  if (!hasSupabaseAuth() || supabaseAuthListenerBound) return;
-  supabaseAuthListenerBound = true;
-  supabaseClient.auth.onAuthStateChange(async (event, session) => {
-    if (event === "PASSWORD_RECOVERY") {
-      renderAuthPage("设置新密码", "#home", "reset");
-      return;
-    }
-    if (isPasswordRecoveryHash()) {
-      renderAuthPage("设置新密码", "#home", "reset");
-      return;
-    }
-    if (event === "SIGNED_IN" && session?.user && !isLoggedIn()) {
-      await completeSupabaseAuth(session.user, "#home");
-    }
-    if (event === "SIGNED_OUT" && state.session?.provider === "supabase") {
-      state.session = { loggedIn: false };
-      saveState();
-      if (!location.hash.startsWith("#auth")) route();
-    }
+  if (!hasSupabaseAuth() || !authModule()) return;
+  const result = authModule().bindAuthListener({
+    effects: authFlowEffects(),
+    adminEmail: ADMIN_EMAIL,
+    getHref: () => window.location.href,
+    getCurrentHash: () => window.location.hash || ""
   });
+  supabaseAuthListenerBound = Boolean(result.success);
 }
 
 bindSupabaseAuthListener();

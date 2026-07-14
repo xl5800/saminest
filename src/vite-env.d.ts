@@ -32,5 +32,6 @@ interface Window {
     supabase: {
       getClient(): SaminestSupabaseClient | null;
     };
+    auth: import("./features/auth/auth-service").AuthService;
   };
 }
