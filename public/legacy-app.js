@@ -100,6 +100,18 @@ function initializeSupabaseClient() {
   return supabaseClient;
 }
 
+function postsModule() {
+  return window.SaminestModules?.posts || null;
+}
+
+function listingReadContext() {
+  return {
+    currentUserId: currentUserId(),
+    getCurrentUserId: currentUserId,
+    fallbackImages
+  };
+}
+
 function loadState() {
   let saved = null;
   try {
@@ -187,19 +199,9 @@ function currentUserId() {
   return state.session?.userId || "";
 }
 
-function mapStatusFromDb(status) {
-  if (status === "expired") return "expired";
-  return status === "approved" ? "active" : status || "pending";
-}
-
 function mapStatusToDb(status) {
   if (status === "expired") return "expired";
   return status === "active" ? "approved" : status || "pending";
-}
-
-function mapTypeFromDb(row) {
-  if (row.category === "wanted") return "wanted";
-  return row.type === "secondhand" ? "used" : "rent";
 }
 
 function mapTypeToDb(type) {
@@ -211,34 +213,17 @@ function parsePriceNumber(value) {
   return matched ? Number(matched[0]) : 0;
 }
 
-function formatDbPrice(row) {
-  const amount = Number(row.price || 0);
-  if (!amount) return "价格面议";
-  return row.type === "rental" ? `$${amount}/月` : `$${amount}`;
-}
-
 function normalizeDateValue(value) {
   const text = String(value || "").trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
 }
 
 function timeAgo(value) {
-  const time = new Date(value || Date.now()).getTime();
-  const diff = Math.max(0, Date.now() - time);
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes}分钟前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}小时前`;
-  return formatMonthDay(time);
+  return postsModule()?.mappers.timeAgo(value) || "刚刚";
 }
 
 function formatMonthDay(value) {
-  const date = new Date(value || Date.now());
-  if (Number.isNaN(date.getTime())) return "";
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${month}-${day}`;
+  return postsModule()?.mappers.formatMonthDay(value) || "";
 }
 
 function displayListingTime(item = {}) {
@@ -248,18 +233,7 @@ function displayListingTime(item = {}) {
 }
 
 function normalizeImages(value) {
-  if (Array.isArray(value)) return value.filter(Boolean);
-  const text = String(value || "").trim();
-  if (!text) return [];
-  if (text.startsWith("[")) {
-    try {
-      const parsed = JSON.parse(text);
-      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
-    } catch {
-      return [];
-    }
-  }
-  return text ? [text] : [];
+  return postsModule()?.mappers.normalizeImages(value) || [];
 }
 
 function listingImages(item = {}) {
@@ -347,39 +321,15 @@ function imagePreviewTemplate(images = []) {
 }
 
 function dbListingToUi(row, profileMap = {}, imageMap = {}) {
-  const type = mapTypeFromDb(row);
-  const tags = String(row.nearby || row.category || "")
-    .split(/[,，、]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  const ownerProfile = profileMap[row.user_id] || {};
-  const ownerName = ownerProfile.display_name || ownerProfile.email || "发布者";
-  const ownerAvatar = ownerProfile.avatar_url || "";
-  const images = [...new Set([...(imageMap[row.id] || []), ...normalizeImages(row.image_url)])];
-  return {
-    id: row.id,
-    type,
-    title: row.title,
-    price: formatDbPrice(row),
-    area: row.area,
-    time: timeAgo(row.created_at),
-    tags,
-    detailTags: tags.length ? tags : [typeLabel(type)],
-    photoCount: images.length,
-    image: images[0] || fallbackImages[type] || fallbackImages.used,
-    images,
-    desc: row.description || "",
-    roomType: row.category || "",
-    moveIn: row.move_in || "",
-    contact: row.contact || "站内消息",
-    owner: ownerName,
-    ownerAvatar,
-    ownerAccount: row.user_id,
-    mine: row.user_id === currentUserId(),
-    status: mapStatusFromDb(row.status),
-    reportedCount: row.reported_count || 0,
-    createdAt: new Date(row.created_at || Date.now()).getTime()
-  };
+  const mapper = postsModule()?.mappers.dbListingToUi;
+  return mapper
+    ? mapper({
+        row,
+        profiles: profileMap,
+        images: imageMap,
+        context: listingReadContext()
+      })
+    : null;
 }
 
 function uiListingToDb(listing) {
@@ -402,76 +352,35 @@ function uiListingToDb(listing) {
 
 async function fetchProfilesMap(userIds = []) {
   const ids = [...new Set(userIds.filter(Boolean))];
-  if (!cloudReady() || !ids.length) return {};
-  let { data, error } = await supabaseClient
-    .from("profiles")
-    .select("id,email,display_name,role,avatar_url")
-    .in("id", ids);
-  if (error && /avatar_url/i.test(`${error.message || ""} ${error.details || ""}`)) {
-    const fallback = await supabaseClient
-      .from("profiles")
-      .select("id,email,display_name,role")
-      .in("id", ids);
-    data = fallback.data;
-    error = fallback.error;
-  }
-  if (error) {
-    console.warn("Failed to load profiles", error);
-    return {};
-  }
-  return Object.fromEntries((data || []).map((profile) => [profile.id, profile]));
+  if (!cloudReady() || !ids.length || !postsModule()) return {};
+  const result = await postsModule().service.fetchProfilesMap(ids);
+  return result.success ? result.data : {};
 }
 
 async function fetchListingImagesMap(listingIds = []) {
   const ids = [...new Set(listingIds.filter(Boolean))];
-  if (!cloudReady() || !ids.length) return {};
-  const { data, error } = await supabaseClient
-    .from("listing_images")
-    .select("listing_id,image_url,sort_order")
-    .in("listing_id", ids)
-    .order("sort_order", { ascending: true });
-  if (error) {
-    console.warn("Failed to load listing images", error);
-    return {};
-  }
-  return (data || []).reduce((map, item) => {
-    map[item.listing_id] ||= [];
-    if (item.image_url) map[item.listing_id].push(item.image_url);
-    return map;
-  }, {});
+  if (!cloudReady() || !ids.length || !postsModule()) return {};
+  const result = await postsModule().service.fetchListingImagesMap(ids);
+  return result.success ? result.data : {};
 }
 
 async function loadListingsFromSupabase() {
-  if (!cloudReady()) return false;
-  const { data, error } = await supabaseClient
-    .from("listings")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (error) {
-    console.warn("Failed to load listings", error);
-    return false;
-  }
-  const profileMap = await fetchProfilesMap((data || []).map((item) => item.user_id));
-  const imageMap = await fetchListingImagesMap((data || []).map((item) => item.id));
-  state.listings = (data || []).map((item) => dbListingToUi(item, profileMap, imageMap));
+  if (!cloudReady() || !postsModule()) return false;
+  const result = await postsModule().service.loadListings(listingReadContext());
+  if (!result.success) return false;
+  state.listings = result.data;
   saveState();
   return true;
 }
 
 async function fetchListingByIdFromSupabase(id) {
-  if (!cloudReady() || !id) return null;
-  const { data, error } = await supabaseClient
-    .from("listings")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
-  if (error || !data) {
-    if (error) console.warn("Failed to load listing by id", error);
-    return null;
-  }
-  const profileMap = await fetchProfilesMap([data.user_id]);
-  const imageMap = await fetchListingImagesMap([data.id]);
-  const listing = dbListingToUi(data, profileMap, imageMap);
+  if (!cloudReady() || !id || !postsModule()) return null;
+  const result = await postsModule().service.fetchListingById(
+    id,
+    listingReadContext()
+  );
+  if (!result.success || !result.data) return null;
+  const listing = result.data;
   state.listings = [listing, ...state.listings.filter((item) => item.id !== listing.id)];
   saveState();
   return listing;
@@ -2551,7 +2460,7 @@ function categoryName(type) {
 }
 
 function typeLabel(type) {
-  return { rent: "房源", wanted: "求租", used: "二手" }[type] || "帖子";
+  return postsModule()?.mappers.typeLabel(type) || "帖子";
 }
 
 function categoryPrimaryMeta(item) {

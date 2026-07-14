@@ -33,5 +33,6 @@ interface Window {
       getClient(): SaminestSupabaseClient | null;
     };
     auth: import("./features/auth/auth-service").AuthService;
+    posts: import("./features/posts/posts-service").PostsBridge;
   };
 }
