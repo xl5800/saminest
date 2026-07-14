@@ -4,13 +4,20 @@
  */
 import { renderLoading } from "./components/loading";
 import { showAppNotice } from "./components/toast";
+import { getSupabaseClient } from "./services/supabase/client";
 import { escapeHtml } from "./utils/dom";
 
 window.SaminestModules = {
   dom: { escapeHtml },
   toast: { showAppNotice },
-  loading: { renderLoading }
+  loading: { renderLoading },
+  supabase: { getClient: getSupabaseClient }
 };
+
+// The async CDN may finish before this module, so replay ready after the bridge exists.
+if (window.supabase) {
+  window.dispatchEvent(new Event("saminest:supabase-ready"));
+}
 
 const isLocalDevelopment = ["localhost", "127.0.0.1"].includes(
   window.location.hostname

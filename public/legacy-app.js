@@ -89,18 +89,14 @@ const fallbackImages = {
 
 const app = document.querySelector("#app");
 const supabaseConfig = window.SAMINEST_SUPABASE_CONFIG || window.DMV_SUPABASE_CONFIG || {};
-let supabaseClient =
-  window.supabase && supabaseConfig.url && supabaseConfig.anonKey
-    ? window.supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey)
-    : null;
+let supabaseClient = null;
 let supabaseLoadFailed = false;
 let state = loadState();
 ensureStateDefaults();
 
 function initializeSupabaseClient() {
-  if (!supabaseClient && window.supabase && supabaseConfig.url && supabaseConfig.anonKey) {
-    supabaseClient = window.supabase.createClient(supabaseConfig.url, supabaseConfig.anonKey);
-  }
+  const client = window.SaminestModules?.supabase?.getClient() || null;
+  if (client) supabaseClient = client;
   return supabaseClient;
 }
 
