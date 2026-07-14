@@ -7,7 +7,7 @@ const DEFAULT_SEO = {
   image: `${SITE_URL}/og-image.png`,
   url: SITE_URL
 };
-
+// test git
 const seedListings = [
   {
     id: "rent-rockville",
