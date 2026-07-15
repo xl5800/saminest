@@ -104,6 +104,10 @@ function postsModule() {
   return window.SaminestModules?.posts || null;
 }
 
+function imageUploadModule() {
+  return window.SaminestModules?.publish?.images || null;
+}
+
 function listingReadContext() {
   return {
     currentUserId: currentUserId(),
@@ -303,12 +307,13 @@ function updateListingSeo(item) {
 }
 
 function isDataUrl(value) {
-  return String(value || "").startsWith("data:");
+  return imageUploadModule().isDataUrl(value);
 }
 
 async function dataUrlToBlob(dataUrl) {
-  const response = await fetch(dataUrl);
-  return response.blob();
+  const result = await imageUploadModule().dataUrlToBlob(dataUrl);
+  if (result.success) return result.data;
+  throw new Error(result.error.message);
 }
 
 function imagePreviewTemplate(images = []) {
@@ -409,36 +414,37 @@ async function saveListingImagesToSupabase(listingId, images = []) {
 }
 
 async function uploadListingImagesToSupabase(listingId, images = []) {
-  if (!cloudReady() || !currentUserId() || !listingId) return [];
-  const uploaded = [];
-  for (const [index, image] of images.entries()) {
-    if (!isDataUrl(image)) {
-      uploaded.push(image);
-      continue;
+  const result = await imageUploadModule().uploadListingImages({
+    listingId,
+    images,
+    isUploadAvailable: cloudReady,
+    getUserId: currentUserId
+  });
+  if (result.success) return result.data;
+  if (["IMAGE_UPLOAD_CONTEXT_INVALID", "STORAGE_UPLOAD_FAILED"].includes(result.error.code)) {
+    if (result.error.code === "STORAGE_UPLOAD_FAILED") {
+      console.warn("Failed to upload listing image", result.error);
     }
-    const blob = await dataUrlToBlob(image);
-    const extension = blob.type === "image/png" ? "png" : "jpg";
-    const path = `${currentUserId()}/${listingId}/${Date.now()}-${index}.${extension}`;
-    const { error } = await supabaseClient.storage.from("listing-images").upload(path, blob, {
-      cacheControl: "3600",
-      contentType: blob.type || "image/jpeg",
-      upsert: true
-    });
-    if (error) {
-      console.warn("Failed to upload listing image", error);
-      return [];
-    }
-    const { data } = supabaseClient.storage.from("listing-images").getPublicUrl(path);
-    if (data?.publicUrl) uploaded.push(data.publicUrl);
+    return [];
   }
-  return uploaded;
+  throw new Error(result.error.message);
 }
 
 async function prepareCloudListingImages(listingId, images = []) {
-  const hasLocalImages = images.some(isDataUrl);
-  if (!hasLocalImages) return images;
-  const uploadedImages = await uploadListingImagesToSupabase(listingId, images);
-  return uploadedImages.length === images.length ? uploadedImages : [];
+  const result = await imageUploadModule().prepareCloudListingImages({
+    listingId,
+    images,
+    isUploadAvailable: cloudReady,
+    getUserId: currentUserId
+  });
+  if (result.success) return result.data;
+  if (["IMAGE_UPLOAD_CONTEXT_INVALID", "STORAGE_UPLOAD_FAILED"].includes(result.error.code)) {
+    if (result.error.code === "STORAGE_UPLOAD_FAILED") {
+      console.warn("Failed to upload listing image", result.error);
+    }
+    return [];
+  }
+  throw new Error(result.error.message);
 }
 
 async function loadFavoritesFromSupabase() {
