@@ -108,8 +108,12 @@ function postsModule() {
   return window.SaminestModules?.posts || null;
 }
 
+function publishModule() {
+  return window.SaminestModules?.publish || null;
+}
+
 function imageUploadModule() {
-  return window.SaminestModules?.publish?.images || null;
+  return publishModule()?.images || null;
 }
 
 function listingReadContext() {
@@ -212,18 +216,9 @@ function mapStatusToDb(status) {
   return status === "active" ? "approved" : status || "pending";
 }
 
-function mapTypeToDb(type) {
-  return type === "used" ? "secondhand" : "rental";
-}
-
 function parsePriceNumber(value) {
   const matched = String(value || "").replace(/,/g, "").match(/\d+(\.\d+)?/);
   return matched ? Number(matched[0]) : 0;
-}
-
-function normalizeDateValue(value) {
-  const text = String(value || "").trim();
-  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
 }
 
 function timeAgo(value) {
@@ -342,21 +337,11 @@ function dbListingToUi(row, profileMap = {}, imageMap = {}) {
 }
 
 function uiListingToDb(listing) {
-  const images = listingImages(listing);
-  return {
-    user_id: currentUserId(),
-    type: mapTypeToDb(listing.type),
-    status: mapStatusToDb(listing.status),
-    title: listing.title,
-    description: listing.desc || "暂无详细描述。",
-    price: parsePriceNumber(listing.price),
-    area: listing.area,
-    category: listing.type === "wanted" ? "wanted" : listing.roomType || listing.tags?.[0] || typeLabel(listing.type),
-    move_in: normalizeDateValue(listing.moveIn),
-    nearby: Array.isArray(listing.tags) ? [...new Set([listing.roomType, listing.moveIn, ...listing.tags].filter(Boolean))].join(", ") : "",
-    image_url: images.length > 1 ? JSON.stringify(images) : images[0] || listing.image || null,
-    contact: listing.contact || "站内消息"
-  };
+  return publishModule().mappers.uiListingToDb(
+    listing,
+    currentUserId(),
+    Object.values(fallbackImages)
+  );
 }
 
 async function fetchProfilesMap(userIds = []) {
@@ -396,25 +381,11 @@ async function fetchListingByIdFromSupabase(id) {
 }
 
 async function saveListingImagesToSupabase(listingId, images = []) {
-  if (!cloudReady() || !listingId) return false;
-  const cleanImages = [...new Set(images.filter(Boolean))];
-  const deleted = await supabaseClient.from("listing_images").delete().eq("listing_id", listingId);
-  if (deleted.error) {
-    console.warn("Failed to clear listing images", deleted.error);
-    return false;
-  }
-  if (!cleanImages.length) return true;
-  const rows = cleanImages.map((imageUrl, index) => ({
-    listing_id: listingId,
-    image_url: imageUrl,
-    sort_order: index
-  }));
-  const { error } = await supabaseClient.from("listing_images").insert(rows);
-  if (error) {
-    console.warn("Failed to save listing images", error);
-    return false;
-  }
-  return true;
+  if (!cloudReady() || !listingId || !publishModule()?.service) return false;
+  const result = await publishModule().service.saveListingImages(listingId, images);
+  if (result.success) return true;
+  console.warn("Failed to save listing images", result.error);
+  return false;
 }
 
 async function uploadListingImagesToSupabase(listingId, images = []) {
@@ -2745,132 +2716,100 @@ function showAppNotice(message, tone = "success") {
   return window.SaminestModules.toast.showAppNotice(message, tone);
 }
 
-async function submitListing(form, type) {
-  if (!isLoggedIn()) {
-    renderAuthPage("登录后发布信息", "#publish");
-    return;
-  }
-  if (currentAccountIsBanned()) {
-    renderAuthPage("账号已被封禁，不能继续发布。", "#home");
-    return;
-  }
-  if (state.session?.provider === "supabase" && cloudConfigured() && !cloudReady()) {
-    showAppNotice(cloudLoadingMessage("发布"), "error");
-    return false;
-  }
+function collectPublishRequest(form, type) {
   const editingId = form.dataset.editingId;
   const draftId = form.dataset.draftId;
   const data = Object.fromEntries(new FormData(form).entries());
   const selectedChips = [...form.querySelectorAll(".chip.active")].map((chip) => chip.dataset.chip).filter(Boolean);
-  const manualTags = normalizeList(data.tags);
-  const structuredTags = type === "rent" ? [data.roomType, data.moveIn] : [data.moveIn];
-  const tags = [...new Set([...(manualTags.length ? manualTags : selectedChips), ...structuredTags].filter(Boolean))];
-  const detailTags = tags.length ? tags : [typeLabel(type)];
   const existing = editingId ? state.listings.find((item) => item.id === editingId) : null;
   const selectedImages = normalizeImages(data.imageDataUrls);
   const existingImages = existing ? listingImages(existing) : [];
   const images = selectedImages.length ? selectedImages : existingImages;
-  const image = images[0] || fallbackImages[type];
-
-  const listing = {
-    id: existing?.id || `${type}-${Date.now()}`,
-    type,
-    title: cleanOr(data.title, defaultTitle(type)),
-    price: cleanOr(data.price, defaultPrice(type)),
-    area: cleanOr(data.area, "本地地区"),
-    time: existing?.time || "刚刚",
-    tags,
-    detailTags,
-    photoCount: images.length,
-    image,
-    images,
-    imageDataUrls: images,
-    imageDataUrl: images[0] || "",
-    desc: cleanOr(data.desc, "暂无详细描述。"),
-    roomType: cleanOr(data.roomType, ""),
-    moveIn: cleanOr(data.moveIn, ""),
-    contact: cleanOr(data.contact, "站内消息"),
-    owner: state.user.name,
-    ownerAccount: state.session.userId || state.session.account || "",
-    mine: true,
-    status: existing?.status || (isAdmin() ? "active" : "pending"),
-    createdAt: existing?.createdAt || Date.now()
+  return {
+    editingId,
+    request: {
+      type,
+      form: data,
+      selectedChips,
+      images,
+      existing,
+      editingId,
+      draftId,
+      fallbackImages,
+      auth: {
+        loggedIn: isLoggedIn(),
+        banned: currentAccountIsBanned(),
+        userId: currentUserId(),
+        account: state.session?.account || "",
+        ownerName: state.user.name,
+        provider: state.session?.provider,
+        cloudConfigured: cloudConfigured(),
+        cloudReady: cloudReady(),
+        isAdmin: isAdmin()
+      }
+    }
   };
+}
 
-  if (cloudReady() && currentUserId()) {
-    let cloudImages = images;
-    let savedListing = null;
+function presentPublishFailure(error) {
+  if (error.code === "PUBLISH_AUTH_REQUIRED") {
+    renderAuthPage(error.message, "#publish");
+    return false;
+  }
+  if (error.code === "PUBLISH_ACCOUNT_BANNED") {
+    renderAuthPage(error.message, "#home");
+    return false;
+  }
+  if (error.code === "PUBLISH_CLOUD_NOT_READY") {
+    showAppNotice(cloudLoadingMessage("发布"), "error");
+    return false;
+  }
+  const alertErrors = new Set([
+    "PUBLISH_EDIT_IMAGE_UPLOAD_FAILED",
+    "PUBLISH_IMAGE_UPLOAD_FAILED",
+    "PUBLISH_IMAGE_RELATION_FAILED",
+    "LISTING_INSERT_FAILED",
+    "LISTING_UPDATE_FAILED",
+    "LISTING_IMAGE_URL_UPDATE_FAILED",
+    "LISTINGS_WRITE_CLIENT_UNAVAILABLE"
+  ]);
+  if (alertErrors.has(error.code)) window.alert(error.message);
+  else showAppNotice(`发布失败：${error.message}`, "error");
+  return false;
+}
 
-    if (existing?.id) {
-      cloudImages = await prepareCloudListingImages(existing.id, images);
-      if (images.length && !cloudImages.length) {
-        window.alert("图片上传失败，帖子没有更新。请确认 Supabase Storage 的 listing-images bucket 和权限已配置。");
-        return;
-      }
-      const payload = uiListingToDb({ ...listing, image: cloudImages[0] || "", images: cloudImages, imageDataUrls: cloudImages });
-      const { data: updatedListing, error } = await supabaseClient
-        .from("listings")
-        .update(payload)
-        .eq("id", existing.id)
-        .select()
-        .single();
-      if (error) {
-        window.alert(`发布失败：${authErrorMessage(error)}`);
-        return;
-      }
-      savedListing = updatedListing;
-    } else {
-      const payload = uiListingToDb({ ...listing, image: "", images: [], imageDataUrls: [] });
-      const { data: insertedListing, error } = await supabaseClient.from("listings").insert(payload).select().single();
-      if (error) {
-        window.alert(`发布失败：${authErrorMessage(error)}`);
-        return;
-      }
-      savedListing = insertedListing;
-      cloudImages = await prepareCloudListingImages(savedListing.id, images);
-      if (images.length && !cloudImages.length) {
-        await supabaseClient.from("listings").delete().eq("id", savedListing.id);
-        window.alert("图片上传失败，帖子没有发布。请确认 Supabase Storage 的 listing-images bucket 和权限已配置。");
-        return;
-      }
-      if (cloudImages.length) {
-        const imagePayload = uiListingToDb({ ...listing, image: cloudImages[0], images: cloudImages, imageDataUrls: cloudImages });
-        const { error: imageUpdateError } = await supabaseClient
-          .from("listings")
-          .update({ image_url: imagePayload.image_url })
-          .eq("id", savedListing.id);
-        if (imageUpdateError) {
-          await supabaseClient.from("listings").delete().eq("id", savedListing.id);
-          window.alert(`图片保存失败：${authErrorMessage(imageUpdateError)}`);
-          return;
-        }
-      }
-    }
-    const savedImages = await saveListingImagesToSupabase(savedListing.id, cloudImages);
-    if (cloudImages.length && !savedImages) {
-      window.alert("图片已上传，但图片记录保存失败。请检查 listing_images 表权限。");
-      return;
-    }
-    if (draftId) {
-      state.drafts = state.drafts.filter((draft) => draft.id !== draftId);
-    }
+async function applyPublishOutcome(outcome, editingId) {
+  if (outcome.draftId) {
+    state.drafts = state.drafts.filter((draft) => draft.id !== outcome.draftId);
+  }
+  if (outcome.stateUpdate.strategy === "reload") {
     await loadListingsFromSupabase();
-    showAppNotice(existing ? "修改已保存" : "发布成功，帖子已提交");
-    location.hash = postUrl(savedListing.id);
-    route();
-    return true;
+  } else if (outcome.stateUpdate.strategy === "replace") {
+    state.listings = state.listings.map((item) => (
+      item.id === editingId ? outcome.stateUpdate.listing : item
+    ));
+    saveState();
+  } else {
+    state.listings = [outcome.stateUpdate.listing, ...state.listings];
+    saveState();
   }
-
-  state.listings = existing
-    ? state.listings.map((item) => (item.id === editingId ? listing : item))
-    : [listing, ...state.listings];
-  if (draftId) {
-    state.drafts = state.drafts.filter((draft) => draft.id !== draftId);
-  }
-  saveState();
-  showAppNotice(existing ? "修改已保存" : "发布成功，帖子已提交");
-  location.hash = postUrl(listing.id);
+  showAppNotice(outcome.action === "updated" ? "修改已保存" : "发布成功，帖子已提交");
+  location.hash = postUrl(outcome.listingId);
+  if (outcome.mode === "cloud") route();
   return true;
+}
+
+async function submitListing(form, type) {
+  const module = publishModule();
+  if (!module?.service) {
+    showAppNotice("发布服务暂时不可用，请刷新后重试。", "error");
+    return false;
+  }
+  const collected = collectPublishRequest(form, type);
+  const result = await module.service.publish(collected.request);
+  return result.success
+    ? applyPublishOutcome(result.data, collected.editingId)
+    : presentPublishFailure(result.error);
 }
 
 function saveDraft(form, type) {

@@ -78,7 +78,6 @@ export function createPostsService(
     listingIds: string[]
   ): Promise<Result<ListingImagesMap>> => {
     const ids = uniqueIds(listingIds);
-    console.log(ids.length, ids);
     if (!ids.length) return ok({});
     try {
       const result = await api.listListingImages(ids);

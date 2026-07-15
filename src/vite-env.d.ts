@@ -34,7 +34,7 @@ interface Window {
     };
     auth: import("./features/auth/auth-service").AuthService;
     posts: import("./features/posts/posts-service").PostsBridge;
-    publish: {
+    publish: import("./features/publish/publish-service").PublishBridge & {
       images: import("./features/publish/image-service").ImageService;
     };
   };

@@ -6,13 +6,15 @@ import { renderLoading } from "./components/loading";
 import { showAppNotice } from "./components/toast";
 import { createAuthService } from "./features/auth/auth-service";
 import { createPostsBridge } from "./features/posts/posts-service";
-import { createImageService } from "./features/publish/image-service";
+import { imageService } from "./features/publish/image-service";
+import { createPublishBridge } from "./features/publish/publish-service";
 import { getSupabaseClient } from "./services/supabase/client";
 import { escapeHtml } from "./utils/dom";
 
 const auth = createAuthService();
 const posts = createPostsBridge();
-const images = createImageService();
+const images = imageService;
+const publish = createPublishBridge();
 
 window.SaminestModules = {
   dom: { escapeHtml },
@@ -21,7 +23,7 @@ window.SaminestModules = {
   supabase: { getClient: getSupabaseClient },
   auth,
   posts,
-  publish: { images }
+  publish: { images, ...publish }
 };
 
 // The async CDN may finish before this module, so replay ready after the bridge exists.
