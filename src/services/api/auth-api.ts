@@ -14,6 +14,7 @@ import {
   authClientUnavailableError,
   normalizeAuthError
 } from "../../features/auth/auth-errors";
+import { isAllowedAvatarMetadataValue } from "../../utils/avatar";
 
 interface SupabaseResponse<T> {
   data: T;
@@ -46,7 +47,8 @@ interface SupabaseAuthPort {
     refresh_token: string;
   }): Promise<SupabaseResponse<{ session: AuthSession | null }>>;
   updateUser(input: {
-    password: string;
+    password?: string;
+    data?: Record<string, unknown>;
   }): Promise<SupabaseResponse<{ user: AuthUser | null }>>;
   signOut(): Promise<{ error: unknown }>;
   onAuthStateChange(callback: AuthStateChangeCallback): {
@@ -79,6 +81,9 @@ export interface AuthApi {
     refreshToken: string;
   }): Promise<Result<AuthSession | null>>;
   updatePassword(password: string): Promise<Result<AuthUser | null>>;
+  updateMetadata(
+    data: Record<string, unknown>
+  ): Promise<Result<AuthUser | null>>;
   signOut(): Promise<Result<null>>;
   onAuthStateChange(
     callback: AuthStateChangeCallback
@@ -180,6 +185,22 @@ export function createAuthApi(
       const port = auth();
       if (!port.success) return port;
       const response = await execute(() => port.data.updateUser({ password }));
+      return response.success ? ok(response.data.user) : response;
+    },
+
+    async updateMetadata(data) {
+      if (
+        Object.prototype.hasOwnProperty.call(data, "avatar_url")
+        && !isAllowedAvatarMetadataValue(data.avatar_url)
+      ) {
+        return fail(
+          "AUTH_AVATAR_METADATA_UNSAFE",
+          "头像必须先上传后再保存，请重新选择图片。"
+        );
+      }
+      const port = auth();
+      if (!port.success) return port;
+      const response = await execute(() => port.data.updateUser({ data }));
       return response.success ? ok(response.data.user) : response;
     },
 

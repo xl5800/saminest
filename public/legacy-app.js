@@ -92,6 +92,10 @@ const supabaseConfig = window.SAMINEST_SUPABASE_CONFIG || window.DMV_SUPABASE_CO
 let supabaseClient = null;
 let supabaseLoadFailed = false;
 let state = loadState();
+let legacyAvatarMigrationScheduled = false;
+let legacyAvatarReauthenticationRequired = false;
+let legacyAvatarMigrationTimer = 0;
+let legacyAvatarMigrationUserId = "";
 ensureStateDefaults();
 
 function initializeSupabaseClient() {
@@ -2031,6 +2035,100 @@ function navigateAuthOnce(returnTo = "#home") {
   location.hash = target;
 }
 
+function legacyAvatarMigrationInput(outcome) {
+  return {
+    userId: outcome?.user?.id || "",
+    metadataAvatarUrl: outcome?.user?.user_metadata?.avatar_url,
+    profileAvatarUrl: outcome?.savedAccount?.avatarUrl
+  };
+}
+
+function applyCurrentUserAvatar(avatarUrl) {
+  state.user = {
+    ...state.user,
+    avatarUrl,
+    avatar: String(state.user.name || "华").slice(0, 1).toUpperCase()
+  };
+  syncCurrentUserListingsProfile({ avatarUrl });
+  saveState();
+}
+
+function resetLegacyAvatarMigrationState(expectedUserId = "") {
+  if (
+    expectedUserId
+    && legacyAvatarMigrationUserId
+    && legacyAvatarMigrationUserId !== expectedUserId
+  ) return false;
+  window.clearTimeout(legacyAvatarMigrationTimer);
+  legacyAvatarMigrationTimer = 0;
+  legacyAvatarMigrationScheduled = false;
+  legacyAvatarReauthenticationRequired = false;
+  legacyAvatarMigrationUserId = "";
+  return true;
+}
+
+function handleLegacyAvatarMigrationFailure(message, userId) {
+  if (state.session?.userId !== userId) {
+    resetLegacyAvatarMigrationState(userId);
+    return;
+  }
+  if (!resetLegacyAvatarMigrationState(userId)) return;
+  showAppNotice(message);
+  void refreshCloudData()
+    .catch(() => false)
+    .finally(() => route());
+}
+
+function scheduleLegacyAvatarMigration(outcome) {
+  const module = authModule();
+  const input = legacyAvatarMigrationInput(outcome);
+  if (!module?.needsAvatarMigration(input)) return false;
+
+  if (legacyAvatarMigrationScheduled) {
+    if (legacyAvatarMigrationUserId === input.userId) {
+      legacyAvatarReauthenticationRequired = true;
+      return true;
+    }
+    resetLegacyAvatarMigrationState();
+  }
+  legacyAvatarReauthenticationRequired = true;
+  legacyAvatarMigrationScheduled = true;
+  legacyAvatarMigrationUserId = input.userId;
+  legacyAvatarMigrationTimer = window.setTimeout(() => {
+    legacyAvatarMigrationTimer = 0;
+    if (state.session?.userId !== input.userId) {
+      resetLegacyAvatarMigrationState(input.userId);
+      return;
+    }
+    void module.migrateLegacyAvatar(input).then(async (result) => {
+      if (!result?.success) {
+        handleLegacyAvatarMigrationFailure(
+          `${result?.error?.message || "旧头像迁移未完全完成。"} 请退出并重新登录后，在个人资料中重新保存头像。`,
+          input.userId
+        );
+        return;
+      }
+      if (state.session?.userId !== input.userId) {
+        resetLegacyAvatarMigrationState(input.userId);
+        return;
+      }
+      applyCurrentUserAvatar(result.data.avatarUrl);
+      const signedOut = await module.signOut(authFlowEffects());
+      if (!signedOut?.success) {
+        showAppNotice("头像已安全迁移，但自动退出未完成。请刷新页面后重新登录；如果仍显示已登录，请再次退出。");
+        return;
+      }
+      showAppNotice("头像已安全迁移，请重新登录以完成更新。");
+    }).catch(() => {
+      handleLegacyAvatarMigrationFailure(
+        "旧头像迁移失败，请退出并重新登录后，在个人资料中重新保存头像。",
+        input.userId
+      );
+    });
+  }, 0);
+  return true;
+}
+
 function authFlowEffects() {
   return {
     async onAuthenticated(outcome, returnTo, mode) {
@@ -2041,6 +2139,17 @@ function authFlowEffects() {
         { navigate: false }
       );
       if (!applied?.success) return;
+      if (scheduleLegacyAvatarMigration(outcome)) {
+        if (mode === "restore") {
+          const target = returnTo || "#home";
+          if (location.hash !== target) {
+            replaceAuthUrl(`${location.pathname}${location.search}${target}`);
+          }
+          return;
+        }
+        navigateAuthOnce(returnTo);
+        return;
+      }
       if (mode === "restore") {
         const target = returnTo || "#home";
         if (location.hash !== target) {
@@ -2064,6 +2173,7 @@ function authFlowEffects() {
       );
     },
     onSignedOut(options) {
+      resetLegacyAvatarMigrationState();
       const shouldClear = Boolean(
         options.force
         || options.target
@@ -2102,7 +2212,9 @@ function authFlowEffects() {
         state.user.name = name;
         state.user.avatar = String(name).slice(0, 1).toUpperCase();
       }
-      if (typeof avatarUrl === "string") state.user.avatarUrl = avatarUrl;
+      if (imageUploadModule()?.isSafeAvatarMetadataUrl(avatarUrl)) {
+        state.user.avatarUrl = avatarUrl;
+      }
       saveState();
     }
   };
@@ -3093,6 +3205,8 @@ async function sendMessage(form, conversationId) {
 }
 
 async function saveProfileSettings(form) {
+  const requestedUserId = currentUserId();
+  const shouldSaveCloud = cloudReady() && Boolean(requestedUserId);
   const data = Object.fromEntries(new FormData(form).entries());
   const name = String(data.name || "").trim();
   const subtitle = String(data.subtitle || "").trim() || "Saminest";
@@ -3101,22 +3215,36 @@ async function saveProfileSettings(form) {
     return;
   }
 
-  if (cloudReady() && currentUserId()) {
-    const { error: authError } = await supabaseClient.auth.updateUser({
-      data: { display_name: name, name, avatar_url: state.user.avatarUrl || "" }
-    });
-    if (authError) {
-      window.alert(`资料保存失败：${authErrorMessage(authError)}`);
+  let avatarMigrated = false;
+  if (shouldSaveCloud) {
+    const module = authModule();
+    if (!module) {
+      window.alert(cloudLoadingMessage("账号"));
       return;
     }
-    const { error: profileError } = await supabaseClient
-      .from("profiles")
-      .update({ display_name: name })
-      .eq("id", currentUserId());
-    if (profileError) {
-      window.alert(`昵称保存失败：${authErrorMessage(profileError)}`);
+    if (imageUploadModule()?.isLegacyAvatarDataUrl(state.user.avatarUrl)) {
+      const avatarResult = await module.saveAvatar({
+        userId: requestedUserId,
+        image: state.user.avatarUrl
+      });
+      if (state.session?.userId !== requestedUserId) return;
+      if (!avatarResult.success) {
+        window.alert(`头像保存失败：${avatarResult.error.message}`);
+        return;
+      }
+      applyCurrentUserAvatar(avatarResult.data.avatarUrl);
+      legacyAvatarMigrationScheduled = true;
+      legacyAvatarReauthenticationRequired = true;
+      legacyAvatarMigrationUserId = requestedUserId;
+      avatarMigrated = true;
+    }
+    const authResult = await module.updateDisplayName(requestedUserId, name);
+    if (state.session?.userId !== requestedUserId) return;
+    if (!authResult.success) {
+      window.alert(`资料保存失败：${authResult.error.message}`);
       return;
     }
+    if (authResult.data?.userId !== requestedUserId) return;
   }
 
   const accountKey = normalizeAuthEmail(state.session?.email || state.session?.account || "");
@@ -3131,11 +3259,17 @@ async function saveProfileSettings(form) {
   };
   syncCurrentUserListingsProfile({ name, avatarUrl: state.user.avatarUrl || "" });
   saveState();
-  window.alert("账号资料已保存。");
+  window.alert(
+    avatarMigrated
+      ? "账号资料已保存。请退出并重新登录，以完成头像安全更新。"
+      : "账号资料已保存。"
+  );
   renderSettings();
 }
 
 async function updateProfileAvatar(input) {
+  const requestedUserId = currentUserId();
+  const shouldSaveCloud = cloudReady() && Boolean(requestedUserId);
   const file = input.files?.[0];
   if (!file) return;
   if (!String(file.type || "").startsWith("image/")) {
@@ -3144,33 +3278,36 @@ async function updateProfileAvatar(input) {
   }
   try {
     const avatarSource = await readFileAsDataUrl(file);
-    const avatarUrl = await resizeImageDataUrl(avatarSource, 240, 0.78);
-    if (cloudReady() && currentUserId()) {
-      const { error: authError } = await supabaseClient.auth.updateUser({
-        data: { avatar_url: avatarUrl }
+    let avatarUrl = await resizeImageDataUrl(avatarSource, 240, 0.78);
+    let requiresReauthentication = false;
+    if (shouldSaveCloud) {
+      const module = authModule();
+      if (!module) {
+        window.alert(cloudLoadingMessage("头像"));
+        return;
+      }
+      const result = await module.saveAvatar({
+        userId: requestedUserId,
+        image: avatarUrl
       });
-      if (authError) {
-        window.alert(`头像保存失败：${authErrorMessage(authError)}`);
+      if (state.session?.userId !== requestedUserId) return;
+      if (!result.success) {
+        window.alert(`头像保存失败：${result.error.message}`);
         return;
       }
-      const { error: profileError } = await supabaseClient
-        .from("profiles")
-        .update({ avatar_url: avatarUrl })
-        .eq("id", currentUserId());
-      if (profileError) {
-        window.alert("头像已更新到当前账号，但资料表还缺少 avatar_url 字段。请先运行 supabase-profile-avatar-url.sql 后再保存头像。");
-        return;
-      }
+      avatarUrl = result.data.avatarUrl;
+      requiresReauthentication = result.data.requiresReauthentication;
+      legacyAvatarMigrationScheduled = true;
+      legacyAvatarReauthenticationRequired = requiresReauthentication;
+      legacyAvatarMigrationUserId = requestedUserId;
     }
-    state.user = {
-      ...state.user,
-      avatarUrl,
-      avatar: String(state.user.name || "华").slice(0, 1).toUpperCase()
-    };
-    syncCurrentUserListingsProfile({ avatarUrl });
-    saveState();
+    if (shouldSaveCloud && state.session?.userId !== requestedUserId) return;
+    applyCurrentUserAvatar(avatarUrl);
     if ((location.hash || "").startsWith("#settings-profile")) renderProfileSettings();
     else renderProfile();
+    if (requiresReauthentication) {
+      showAppNotice("头像已安全保存，请退出并重新登录以更新登录凭证。");
+    }
   } catch (error) {
     console.warn("Failed to update avatar", error);
     window.alert("头像读取失败，请换一张图片再试。");
@@ -3862,7 +3999,10 @@ function hydrateCloudData() {
     try {
       await syncSupabaseSession();
 
-      if (!isPasswordRecoveryHash()) {
+      if (
+        !isPasswordRecoveryHash()
+        && !legacyAvatarReauthenticationRequired
+      ) {
         await refreshCloudData();
       }
 

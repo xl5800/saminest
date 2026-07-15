@@ -143,6 +143,10 @@ describe("Auth API", () => {
     await api.exchangeRecoveryCode("pkce-code");
     await api.setRecoverySession({ accessToken: "access", refreshToken: "refresh" });
     await api.updatePassword("new-secret");
+    await api.updateMetadata({
+      display_name: "Person",
+      avatar_url: "https://cdn.example/avatar.jpg"
+    });
     await api.signOut();
 
     expect(harness.auth.resetPasswordForEmail).toHaveBeenCalledWith(
@@ -155,7 +159,49 @@ describe("Auth API", () => {
       refresh_token: "refresh"
     });
     expect(harness.auth.updateUser).toHaveBeenCalledWith({ password: "new-secret" });
+    expect(harness.auth.updateUser).toHaveBeenCalledWith({
+      data: {
+        display_name: "Person",
+        avatar_url: "https://cdn.example/avatar.jpg"
+      }
+    });
     expect(harness.auth.signOut).toHaveBeenCalledOnce();
+  });
+
+  it("blocks Data URLs, Blob URLs, and oversized avatar metadata", async () => {
+    const harness = createHarness();
+    const api = createAuthApi(() => harness.client);
+    const unsafe = [
+      "data:image/jpeg;base64,AAAA",
+      "blob:https://www.saminest.com/avatar",
+      `https://cdn.example/${"a".repeat(2048)}`
+    ];
+
+    for (const avatarUrl of unsafe) {
+      await expect(
+        api.updateMetadata({ avatar_url: avatarUrl })
+      ).resolves.toMatchObject({
+        success: false,
+        error: { code: "AUTH_AVATAR_METADATA_UNSAFE" }
+      });
+    }
+    expect(harness.auth.updateUser).not.toHaveBeenCalled();
+  });
+
+  it("allows clearing legacy avatar metadata", async () => {
+    const harness = createHarness();
+    const api = createAuthApi(() => harness.client);
+    harness.auth.updateUser.mockResolvedValue({
+      data: { user: { id: "user-1", user_metadata: { avatar_url: "" } } },
+      error: null
+    });
+
+    await expect(api.updateMetadata({ avatar_url: "" })).resolves.toMatchObject({
+      success: true
+    });
+    expect(harness.auth.updateUser).toHaveBeenCalledWith({
+      data: { avatar_url: "" }
+    });
   });
 
   it("registers the provider listener through Result", () => {

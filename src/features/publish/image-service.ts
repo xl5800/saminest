@@ -5,9 +5,14 @@ import {
 import { fail, ok, type Result } from "../../services/result";
 import {
   LISTING_IMAGES_BUCKET,
+  type AvatarUploadInput,
   type ListingImagesUploadInput,
   type StorageUploadOptions
 } from "../../types/upload";
+import {
+  isLegacyAvatarDataUrl,
+  isSafeAvatarMetadataUrl
+} from "../../utils/avatar";
 
 interface DataUrlResponse {
   blob(): Promise<Blob>;
@@ -18,11 +23,15 @@ export type DataUrlFetcher = (dataUrl: string) => Promise<DataUrlResponse>;
 export interface ImageServiceDependencies {
   fetcher?: DataUrlFetcher;
   now?: () => number;
+  uniqueId?: () => string;
 }
 
 export interface ImageService {
   isDataUrl(value: unknown): boolean;
+  isLegacyAvatarDataUrl(value: unknown): value is string;
+  isSafeAvatarMetadataUrl(value: unknown): value is string;
   dataUrlToBlob(dataUrl: unknown): Promise<Result<Blob>>;
+  uploadAvatar(input: AvatarUploadInput): Promise<Result<string>>;
   uploadListingImages(
     input: ListingImagesUploadInput
   ): Promise<Result<string[]>>;
@@ -33,6 +42,16 @@ export interface ImageService {
 
 export function isDataUrl(value: unknown): boolean {
   return String(value || "").startsWith("data:");
+}
+
+let uploadUniqueSequence = 0;
+
+function defaultUploadUniqueId(): string {
+  uploadUniqueSequence += 1;
+  const randomPart = typeof globalThis.crypto?.randomUUID === "function"
+    ? globalThis.crypto.randomUUID()
+    : Math.random().toString(36).slice(2);
+  return `${uploadUniqueSequence.toString(36)}-${randomPart}`;
 }
 
 function imageExtension(blob: Blob): "png" | "jpg" {
@@ -78,6 +97,7 @@ export function createImageService(
   const fetcher: DataUrlFetcher =
     dependencies.fetcher || ((dataUrl) => globalThis.fetch(dataUrl));
   const now = dependencies.now || Date.now;
+  const uniqueId = dependencies.uniqueId || defaultUploadUniqueId;
 
   const dataUrlToBlob = async (dataUrl: unknown): Promise<Result<Blob>> => {
     const value = String(dataUrl || "");
@@ -140,9 +160,54 @@ export function createImageService(
     return ok(uploaded);
   };
 
+  const uploadAvatar = async (
+    input: AvatarUploadInput
+  ): Promise<Result<string>> => {
+    const userId = String(input.userId || "").trim();
+    const source = String(input.image || "");
+    if (!userId) {
+      return fail(
+        "AVATAR_UPLOAD_USER_MISSING",
+        "无法确认头像所属账号，请重新登录后再试。"
+      );
+    }
+    if (isSafeAvatarMetadataUrl(source)) return ok(source);
+    if (!isLegacyAvatarDataUrl(source)) {
+      return fail(
+        "AVATAR_SOURCE_INVALID",
+        "头像数据无效，请重新选择图片。"
+      );
+    }
+
+    const converted = await dataUrlToBlob(source);
+    if (!converted.success) return converted;
+    const extension = imageExtension(converted.data);
+    const path = `${userId}/avatar/${now()}-${uniqueId()}.${extension}`;
+    const upload = await api.uploadObject({
+      bucket: LISTING_IMAGES_BUCKET,
+      path,
+      body: converted.data,
+      options: uploadOptions(converted.data)
+    });
+    if (!upload.success) return upload;
+
+    const publicUrl = api.getPublicUrl(LISTING_IMAGES_BUCKET, path);
+    if (!publicUrl.success) return publicUrl;
+    if (!isSafeAvatarMetadataUrl(publicUrl.data)) {
+      return fail(
+        "AVATAR_PUBLIC_URL_INVALID",
+        "无法读取上传后的头像地址，请稍后再试。"
+      );
+    }
+    return ok(publicUrl.data);
+  };
+
   return {
     isDataUrl,
+    isLegacyAvatarDataUrl,
+    isSafeAvatarMetadataUrl,
     dataUrlToBlob,
+    uploadAvatar,
     uploadListingImages,
 
     async prepareCloudListingImages(input) {
@@ -155,3 +220,5 @@ export function createImageService(
     }
   };
 }
+
+export const imageService = createImageService();

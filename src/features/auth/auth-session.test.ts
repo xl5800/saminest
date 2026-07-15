@@ -23,6 +23,7 @@ function createApi(overrides: Partial<AuthApi> = {}): AuthApi {
     exchangeRecoveryCode: vi.fn().mockResolvedValue(ok(null)),
     setRecoverySession: vi.fn().mockResolvedValue(ok(null)),
     updatePassword: vi.fn(),
+    updateMetadata: vi.fn().mockResolvedValue(ok(null)),
     signOut: vi.fn().mockResolvedValue(ok(null)),
     onAuthStateChange: vi.fn(() => ok({ unsubscribe: vi.fn() })),
     ...overrides

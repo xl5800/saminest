@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AuthApi } from "../../services/api/auth-api";
 import type { UsersApi } from "../../services/api/users-api";
-import { fail, ok } from "../../services/result";
+import { fail, ok, type Result } from "../../services/result";
 import type {
   AuthEffects,
   AuthStateChangeCallback,
@@ -25,6 +25,7 @@ function createApi(overrides: Partial<AuthApi> = {}): AuthApi {
     exchangeRecoveryCode: vi.fn().mockResolvedValue(ok(null)),
     setRecoverySession: vi.fn().mockResolvedValue(ok(null)),
     updatePassword: vi.fn().mockResolvedValue(ok(verifiedUser)),
+    updateMetadata: vi.fn().mockResolvedValue(ok(verifiedUser)),
     signOut: vi.fn().mockResolvedValue(ok(null)),
     onAuthStateChange: vi.fn(() => ok({ unsubscribe: vi.fn() })),
     ...overrides
@@ -40,6 +41,10 @@ function createUsersApi(overrides: Partial<UsersApi> = {}): UsersApi {
         display_name: "Person",
         role: "user"
       })
+    ),
+    updateAvatar: vi.fn().mockResolvedValue(ok(null)),
+    updateDisplayName: vi.fn().mockImplementation((userId) =>
+      Promise.resolve(ok({ userId }))
     ),
     ...overrides
   };
@@ -588,6 +593,458 @@ describe("Auth service", () => {
         code: "AUTH_UNAVAILABLE",
         message: "账号功能暂时不可用，请稍后再试。"
       }
+    });
+  });
+
+  it("uploads an avatar once and writes only the returned short URL", async () => {
+    const order: string[] = [];
+    const updateMetadata = vi.fn(async () => {
+      order.push("metadata");
+      return ok(verifiedUser);
+    });
+    const updateAvatar = vi.fn(async () => {
+      order.push("profile");
+      return ok(null);
+    });
+    const uploadAvatar = vi.fn(async () => {
+      order.push("upload");
+      return ok("https://cdn.example/user-1/avatar/1.jpg");
+    });
+    const service = createAuthService(
+      createApi({
+        getSession: vi.fn().mockResolvedValue(ok({ user: verifiedUser })),
+        updateMetadata
+      }),
+      createUsersApi({ updateAvatar }),
+      { uploadAvatar }
+    );
+
+    await expect(service.saveAvatar({
+      userId: "user-1",
+      image: "data:image/jpeg;base64,AAAA"
+    })).resolves.toEqual({
+      success: true,
+      data: {
+        avatarUrl: "https://cdn.example/user-1/avatar/1.jpg",
+        requiresReauthentication: true
+      },
+      error: null
+    });
+    expect(uploadAvatar).toHaveBeenCalledOnce();
+    expect(updateAvatar).toHaveBeenCalledWith(
+      "user-1",
+      "https://cdn.example/user-1/avatar/1.jpg"
+    );
+    expect(updateMetadata).toHaveBeenCalledWith({
+      avatar_url: "https://cdn.example/user-1/avatar/1.jpg"
+    });
+    expect(updateMetadata).not.toHaveBeenCalledWith(
+      expect.objectContaining({ avatar_url: expect.stringMatching(/^data:/) })
+    );
+    expect(order).toEqual(["upload", "metadata", "profile"]);
+  });
+
+  it("coalesces identical concurrent avatar saves into one upload", async () => {
+    let resolveUpload!: (value: Result<string>) => void;
+    const upload = new Promise<Result<string>>((resolve) => {
+      resolveUpload = resolve;
+    });
+    const shortUrl = "https://cdn.example/user-1/avatar/shared.jpg";
+    const uploadAvatar = vi.fn(() => upload);
+    const updateMetadata = vi.fn().mockResolvedValue(ok(verifiedUser));
+    const updateAvatar = vi.fn().mockResolvedValue(ok(null));
+    const service = createAuthService(
+      createApi({
+        getSession: vi.fn().mockResolvedValue(ok({ user: verifiedUser })),
+        updateMetadata
+      }),
+      createUsersApi({ updateAvatar }),
+      { uploadAvatar }
+    );
+    const input = {
+      userId: "user-1",
+      image: "data:image/jpeg;base64,SAME"
+    };
+
+    const first = service.saveAvatar(input);
+    const duplicate = service.saveAvatar(input);
+    await vi.waitFor(() => expect(uploadAvatar).toHaveBeenCalledOnce());
+    resolveUpload(ok(shortUrl));
+
+    await expect(first).resolves.toMatchObject({
+      success: true,
+      data: { avatarUrl: shortUrl }
+    });
+    await expect(duplicate).resolves.toMatchObject({
+      success: true,
+      data: { avatarUrl: shortUrl }
+    });
+    expect(updateMetadata).toHaveBeenCalledOnce();
+    expect(updateAvatar).toHaveBeenCalledOnce();
+  });
+
+  it("migrates concurrent legacy Base64 avatars through one upload", async () => {
+    const updateMetadata = vi.fn().mockResolvedValue(ok(verifiedUser));
+    const updateAvatar = vi.fn().mockResolvedValue(ok(null));
+    const uploadAvatar = vi.fn().mockResolvedValue(
+      ok("https://cdn.example/user-1/avatar/migrated.jpg")
+    );
+    const service = createAuthService(
+      createApi({
+        getSession: vi.fn().mockResolvedValue(ok({ user: verifiedUser })),
+        updateMetadata
+      }),
+      createUsersApi({ updateAvatar }),
+      { uploadAvatar }
+    );
+    const input = {
+      userId: "user-1",
+      metadataAvatarUrl: "data:image/jpeg;base64,AAAA",
+      profileAvatarUrl: "data:image/jpeg;base64,AAAA"
+    };
+
+    const [first, duplicate] = await Promise.all([
+      service.migrateLegacyAvatar(input),
+      service.migrateLegacyAvatar(input)
+    ]);
+    expect(first).toEqual(duplicate);
+    expect(first).toMatchObject({
+      success: true,
+      data: {
+        migrated: true,
+        avatarUrl: "https://cdn.example/user-1/avatar/migrated.jpg",
+        requiresReauthentication: true
+      }
+    });
+    expect(uploadAvatar).toHaveBeenCalledOnce();
+    expect(updateAvatar).toHaveBeenCalledOnce();
+    expect(updateMetadata).toHaveBeenCalledOnce();
+  });
+
+  it("shrinks Auth metadata even if the profile mirror update fails", async () => {
+    const shortUrl = "https://cdn.example/user-1/avatar/short.jpg";
+    const updateMetadata = vi.fn().mockResolvedValue(ok(verifiedUser));
+    const updateAvatar = vi.fn().mockResolvedValue(
+      fail("PROFILE_AVATAR_UPDATE_FAILED", "头像资料暂时无法同步。")
+    );
+    const service = createAuthService(
+      createApi({
+        getSession: vi.fn().mockResolvedValue(ok({ user: verifiedUser })),
+        updateMetadata
+      }),
+      createUsersApi({ updateAvatar }),
+      { uploadAvatar: vi.fn().mockResolvedValue(ok(shortUrl)) }
+    );
+
+    await expect(service.saveAvatar({
+      userId: "user-1",
+      image: "data:image/jpeg;base64,AAAA"
+    })).resolves.toMatchObject({
+      success: false,
+      error: { code: "PROFILE_AVATAR_UPDATE_FAILED" }
+    });
+    expect(updateMetadata).toHaveBeenCalledWith({ avatar_url: shortUrl });
+    expect(updateAvatar).toHaveBeenCalledWith("user-1", shortUrl);
+  });
+
+  it("reuses a safe profile URL when only Auth metadata is legacy", async () => {
+    const safeUrl = "https://cdn.example/user-1/avatar/existing.jpg";
+    const updateMetadata = vi.fn().mockResolvedValue(ok(verifiedUser));
+    const updateAvatar = vi.fn().mockResolvedValue(ok(null));
+    const uploadAvatar = vi.fn(async ({ image }) => ok(image));
+    const service = createAuthService(
+      createApi({
+        getSession: vi.fn().mockResolvedValue(ok({ user: verifiedUser })),
+        updateMetadata
+      }),
+      createUsersApi({ updateAvatar }),
+      { uploadAvatar }
+    );
+
+    await expect(service.migrateLegacyAvatar({
+      userId: "user-1",
+      metadataAvatarUrl: "data:image/jpeg;base64,AAAA",
+      profileAvatarUrl: safeUrl
+    })).resolves.toMatchObject({
+      success: true,
+      data: { migrated: true, avatarUrl: safeUrl }
+    });
+    expect(uploadAvatar).toHaveBeenCalledOnce();
+    expect(uploadAvatar).toHaveBeenCalledWith({
+      userId: "user-1",
+      image: safeUrl
+    });
+    expect(updateMetadata).toHaveBeenCalledWith({ avatar_url: safeUrl });
+  });
+
+  it("clears legacy Blob metadata when no reusable avatar exists", async () => {
+    const updateMetadata = vi.fn().mockResolvedValue(ok(verifiedUser));
+    const updateAvatar = vi.fn().mockResolvedValue(ok(null));
+    const uploadAvatar = vi.fn();
+    const service = createAuthService(
+      createApi({
+        getSession: vi.fn().mockResolvedValue(ok({ user: verifiedUser })),
+        updateMetadata
+      }),
+      createUsersApi({ updateAvatar }),
+      { uploadAvatar }
+    );
+
+    await expect(service.migrateLegacyAvatar({
+      userId: "user-1",
+      metadataAvatarUrl: "blob:https://www.saminest.com/legacy",
+      profileAvatarUrl: ""
+    })).resolves.toMatchObject({
+      success: true,
+      data: { migrated: true, avatarUrl: "" }
+    });
+    expect(uploadAvatar).not.toHaveBeenCalled();
+    expect(updateAvatar).toHaveBeenCalledWith("user-1", "");
+    expect(updateMetadata).toHaveBeenCalledWith({ avatar_url: "" });
+  });
+
+  it("does not mirror a cleared avatar when metadata updates another user", async () => {
+    const otherUser = { ...verifiedUser, id: "user-2" };
+    const updateMetadata = vi.fn().mockResolvedValue(ok(otherUser));
+    const updateAvatar = vi.fn();
+    const service = createAuthService(
+      createApi({
+        getSession: vi.fn().mockResolvedValue(ok({ user: verifiedUser })),
+        updateMetadata
+      }),
+      createUsersApi({ updateAvatar }),
+      { uploadAvatar: vi.fn() }
+    );
+
+    await expect(service.migrateLegacyAvatar({
+      userId: "user-1",
+      metadataAvatarUrl: "blob:https://www.saminest.com/legacy",
+      profileAvatarUrl: ""
+    })).resolves.toMatchObject({
+      success: false,
+      error: { code: "AUTH_SESSION_CHANGED" }
+    });
+    expect(updateAvatar).not.toHaveBeenCalled();
+  });
+
+  it("stops before metadata writes when the active session changes", async () => {
+    const otherUser = { ...verifiedUser, id: "user-2" };
+    const getSession = vi.fn()
+      .mockResolvedValueOnce(ok({ user: verifiedUser }))
+      .mockResolvedValueOnce(ok({ user: otherUser }));
+    const updateMetadata = vi.fn();
+    const updateAvatar = vi.fn();
+    const uploadAvatar = vi.fn().mockResolvedValue(
+      ok("https://cdn.example/user-1/avatar/pending.jpg")
+    );
+    const service = createAuthService(
+      createApi({ getSession, updateMetadata }),
+      createUsersApi({ updateAvatar }),
+      { uploadAvatar }
+    );
+
+    await expect(service.saveAvatar({
+      userId: "user-1",
+      image: "data:image/jpeg;base64,AAAA"
+    })).resolves.toMatchObject({
+      success: false,
+      error: { code: "AUTH_SESSION_CHANGED" }
+    });
+    expect(uploadAvatar).toHaveBeenCalledOnce();
+    expect(updateMetadata).not.toHaveBeenCalled();
+    expect(updateAvatar).not.toHaveBeenCalled();
+  });
+
+  it("lets the last rapid avatar selection win", async () => {
+    let resolveFirst!: (value: Result<string>) => void;
+    const firstUpload = new Promise<Result<string>>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const firstUrl = "https://cdn.example/user-1/avatar/first.jpg";
+    const secondUrl = "https://cdn.example/user-1/avatar/second.jpg";
+    const uploadAvatar = vi.fn()
+      .mockImplementationOnce(() => firstUpload)
+      .mockResolvedValueOnce(ok(secondUrl));
+    const updateMetadata = vi.fn().mockResolvedValue(ok(verifiedUser));
+    const updateAvatar = vi.fn().mockResolvedValue(ok(null));
+    const service = createAuthService(
+      createApi({
+        getSession: vi.fn().mockResolvedValue(ok({ user: verifiedUser })),
+        updateMetadata
+      }),
+      createUsersApi({ updateAvatar }),
+      { uploadAvatar }
+    );
+
+    const first = service.saveAvatar({
+      userId: "user-1",
+      image: "data:image/jpeg;base64,FIRST"
+    });
+    await vi.waitFor(() => expect(uploadAvatar).toHaveBeenCalledOnce());
+    const second = service.saveAvatar({
+      userId: "user-1",
+      image: "data:image/jpeg;base64,SECOND"
+    });
+    await expect(second).resolves.toMatchObject({ success: true });
+    resolveFirst(ok(firstUrl));
+    await expect(first).resolves.toMatchObject({
+      success: false,
+      error: { code: "AVATAR_SAVE_SUPERSEDED" }
+    });
+    expect(updateMetadata).toHaveBeenCalledOnce();
+    expect(updateMetadata).toHaveBeenCalledWith({ avatar_url: secondUrl });
+    expect(updateAvatar).toHaveBeenCalledOnce();
+    expect(updateAvatar).toHaveBeenCalledWith("user-1", secondUrl);
+  });
+
+  it("updates display-name metadata without re-writing the current avatar", async () => {
+    const updateMetadata = vi.fn().mockResolvedValue(ok(verifiedUser));
+    const updateDisplayName = vi.fn().mockResolvedValue(
+      ok({ userId: verifiedUser.id })
+    );
+    const service = createAuthService(
+      createApi({
+        getSession: vi.fn().mockResolvedValue(ok({ user: verifiedUser })),
+        updateMetadata
+      }),
+      createUsersApi({ updateDisplayName }),
+      { uploadAvatar: vi.fn() }
+    );
+
+    await expect(
+      service.updateDisplayName("user-1", " Person ")
+    ).resolves.toMatchObject({
+      success: true,
+      data: { userId: "user-1", user: { id: "user-1" } }
+    });
+    expect(updateMetadata).toHaveBeenCalledWith({
+      display_name: "Person",
+      name: "Person"
+    });
+    expect(updateDisplayName).toHaveBeenCalledWith("user-1", "Person");
+    expect(updateMetadata).not.toHaveBeenCalledWith(
+      expect.objectContaining({ avatar_url: expect.anything() })
+    );
+  });
+
+  it("does not return an avatar success after the active user changes", async () => {
+    const userB = { ...verifiedUser, id: "user-2" };
+    let activeUser = verifiedUser;
+    let resolveProfile!: (value: Result<null>) => void;
+    const profileUpdate = new Promise<Result<null>>((resolve) => {
+      resolveProfile = resolve;
+    });
+    const updateAvatar = vi.fn(() => profileUpdate);
+    const service = createAuthService(
+      createApi({
+        getSession: vi.fn(async () => ok({ user: activeUser })),
+        updateMetadata: vi.fn().mockResolvedValue(ok(verifiedUser))
+      }),
+      createUsersApi({ updateAvatar }),
+      {
+        uploadAvatar: vi.fn().mockResolvedValue(
+          ok("https://cdn.example/user-1/avatar/a.jpg")
+        )
+      }
+    );
+
+    const save = service.saveAvatar({
+      userId: "user-1",
+      image: "data:image/jpeg;base64,AAAA"
+    });
+    await vi.waitFor(() => expect(updateAvatar).toHaveBeenCalledOnce());
+    activeUser = userB;
+    resolveProfile(ok(null));
+
+    await expect(save).resolves.toMatchObject({
+      success: false,
+      error: { code: "AUTH_SESSION_CHANGED" }
+    });
+    expect(updateAvatar).toHaveBeenCalledWith(
+      "user-1",
+      "https://cdn.example/user-1/avatar/a.jpg"
+    );
+  });
+
+  it("keeps a late user A avatar result from superseding user B", async () => {
+    const userB = { ...verifiedUser, id: "user-2" };
+    let activeUser = verifiedUser;
+    let resolveUserAUpload!: (value: Result<string>) => void;
+    const userAUpload = new Promise<Result<string>>((resolve) => {
+      resolveUserAUpload = resolve;
+    });
+    const uploadAvatar = vi.fn()
+      .mockImplementationOnce(() => userAUpload)
+      .mockResolvedValueOnce(
+        ok("https://cdn.example/user-2/avatar/b.jpg")
+      );
+    const updateMetadata = vi.fn(async () => ok(activeUser));
+    const updateAvatar = vi.fn().mockResolvedValue(ok(null));
+    const service = createAuthService(
+      createApi({
+        getSession: vi.fn(async () => ok({ user: activeUser })),
+        updateMetadata
+      }),
+      createUsersApi({ updateAvatar }),
+      { uploadAvatar }
+    );
+
+    const userASave = service.saveAvatar({
+      userId: "user-1",
+      image: "data:image/jpeg;base64,USER_A"
+    });
+    await vi.waitFor(() => expect(uploadAvatar).toHaveBeenCalledOnce());
+    activeUser = userB;
+    const userBSave = service.saveAvatar({
+      userId: "user-2",
+      image: "data:image/jpeg;base64,USER_B"
+    });
+    await expect(userBSave).resolves.toMatchObject({
+      success: true,
+      data: {
+        avatarUrl: "https://cdn.example/user-2/avatar/b.jpg"
+      }
+    });
+
+    resolveUserAUpload(ok("https://cdn.example/user-1/avatar/a.jpg"));
+    await expect(userASave).resolves.toMatchObject({
+      success: false,
+      error: { code: "AUTH_SESSION_CHANGED" }
+    });
+    expect(updateMetadata).toHaveBeenCalledOnce();
+    expect(updateAvatar).toHaveBeenCalledOnce();
+    expect(updateAvatar).toHaveBeenCalledWith(
+      "user-2",
+      "https://cdn.example/user-2/avatar/b.jpg"
+    );
+  });
+
+  it("targets the requested profile and rejects a late display-name result", async () => {
+    const userB = { ...verifiedUser, id: "user-2" };
+    let activeUser = verifiedUser;
+    let resolveProfile!: (value: Result<{ userId: string }>) => void;
+    const profileUpdate = new Promise<Result<{ userId: string }>>((resolve) => {
+      resolveProfile = resolve;
+    });
+    const updateDisplayName = vi.fn(() => profileUpdate);
+    const service = createAuthService(
+      createApi({
+        getSession: vi.fn(async () => ok({ user: activeUser })),
+        updateMetadata: vi.fn().mockResolvedValue(ok(verifiedUser))
+      }),
+      createUsersApi({ updateDisplayName }),
+      { uploadAvatar: vi.fn() }
+    );
+
+    const save = service.updateDisplayName("user-1", "User A");
+    await vi.waitFor(() => expect(updateDisplayName).toHaveBeenCalledOnce());
+    expect(updateDisplayName).toHaveBeenCalledWith("user-1", "User A");
+    activeUser = userB;
+    resolveProfile(ok({ userId: "user-1" }));
+
+    await expect(save).resolves.toMatchObject({
+      success: false,
+      error: { code: "AUTH_SESSION_CHANGED" }
     });
   });
 });

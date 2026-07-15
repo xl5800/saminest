@@ -475,3 +475,207 @@ describe("Listing image service", () => {
     });
   });
 });
+
+describe("Avatar image service", () => {
+  it("returns an existing short HTTP URL without touching Storage", async () => {
+    const api = apiStub();
+    const service = createImageService(api, { fetcher: blobFetcher() });
+    const avatarUrl = "https://cdn.example/avatar.jpg";
+
+    await expect(service.uploadAvatar({
+      userId: "user-1",
+      image: avatarUrl
+    })).resolves.toEqual({ success: true, data: avatarUrl, error: null });
+    expect(api.uploadObject).not.toHaveBeenCalled();
+    expect(api.getPublicUrl).not.toHaveBeenCalled();
+  });
+
+  it("uploads one PNG avatar with the existing bucket and options", async () => {
+    const api = apiStub();
+    const service = createImageService(api, {
+      fetcher: blobFetcher("image/png", [1, 2, 3]),
+      now: () => 12345,
+      uniqueId: () => "upload-a"
+    });
+
+    await expect(service.uploadAvatar({
+      userId: "user-1",
+      image: "data:image/png;base64,AQID"
+    })).resolves.toEqual({
+      success: true,
+      data: "https://cdn.example/user-1/avatar/12345-upload-a.png",
+      error: null
+    });
+    expect(api.uploadObject).toHaveBeenCalledOnce();
+    expect(api.uploadObject).toHaveBeenCalledWith(expect.objectContaining({
+      bucket: "listing-images",
+      path: "user-1/avatar/12345-upload-a.png",
+      options: {
+        cacheControl: "3600",
+        contentType: "image/png",
+        upsert: true
+      }
+    }));
+    expect(api.getPublicUrl).toHaveBeenCalledWith(
+      "listing-images",
+      "user-1/avatar/12345-upload-a.png"
+    );
+  });
+
+  it("uses distinct avatar paths when uploads start in the same millisecond", async () => {
+    const api = apiStub();
+    const uniqueId = vi.fn()
+      .mockReturnValueOnce("upload-a")
+      .mockReturnValueOnce("upload-b");
+    const service = createImageService(api, {
+      fetcher: blobFetcher("image/png"),
+      now: () => 12345,
+      uniqueId
+    });
+
+    await Promise.all([
+      service.uploadAvatar({
+        userId: "user-1",
+        image: "data:image/png;base64,FIRST"
+      }),
+      service.uploadAvatar({
+        userId: "user-1",
+        image: "data:image/png;base64,SECOND"
+      })
+    ]);
+
+    const paths = vi.mocked(api.uploadObject).mock.calls
+      .map(([input]) => input.path);
+    expect(paths).toEqual([
+      "user-1/avatar/12345-upload-a.png",
+      "user-1/avatar/12345-upload-b.png"
+    ]);
+    expect(new Set(paths).size).toBe(2);
+  });
+
+  it("keeps a late older upload from overwriting the newer avatar object", async () => {
+    let releaseFirst!: () => void;
+    let signalFirstStarted!: () => void;
+    const firstRelease = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const firstStarted = new Promise<void>((resolve) => {
+      signalFirstStarted = resolve;
+    });
+    const storedObjects = new Map<string, string>();
+    const uploadObject = vi.fn(async (input: StorageUploadInput) => {
+      if (input.path.endsWith("older.png")) {
+        signalFirstStarted();
+        await firstRelease;
+      }
+      storedObjects.set(input.path, await input.body.text());
+      return ok(null);
+    });
+    const api = apiStub({ uploadObject });
+    const fetcher: DataUrlFetcher = vi.fn(async (dataUrl) => ({
+      blob: async () => new Blob(
+        [dataUrl.includes("OLDER") ? "older-bytes" : "newer-bytes"],
+        { type: "image/png" }
+      )
+    }));
+    const uniqueId = vi.fn()
+      .mockReturnValueOnce("older")
+      .mockReturnValueOnce("newer");
+    const service = createImageService(api, {
+      fetcher,
+      now: () => 777,
+      uniqueId
+    });
+
+    const older = service.uploadAvatar({
+      userId: "user-1",
+      image: "data:image/png;base64,OLDER"
+    });
+    await firstStarted;
+    const newer = service.uploadAvatar({
+      userId: "user-1",
+      image: "data:image/png;base64,NEWER"
+    });
+    await expect(newer).resolves.toMatchObject({
+      success: true,
+      data: "https://cdn.example/user-1/avatar/777-newer.png"
+    });
+    releaseFirst();
+    await expect(older).resolves.toMatchObject({
+      success: true,
+      data: "https://cdn.example/user-1/avatar/777-older.png"
+    });
+
+    expect(storedObjects).toEqual(new Map([
+      ["user-1/avatar/777-newer.png", "newer-bytes"],
+      ["user-1/avatar/777-older.png", "older-bytes"]
+    ]));
+    expect(storedObjects.get("user-1/avatar/777-newer.png")).toBe(
+      "newer-bytes"
+    );
+  });
+
+  it("rejects invalid avatar sources before Storage", async () => {
+    const api = apiStub();
+    const service = createImageService(api, { fetcher: blobFetcher() });
+
+    for (const input of [
+      { userId: "", image: "data:image/png;base64,AAAA" },
+      { userId: "user-1", image: "" },
+      { userId: "user-1", image: "blob:https://example.com/avatar" },
+      { userId: "user-1", image: "ftp://example.com/avatar" }
+    ]) {
+      await expect(service.uploadAvatar(input)).resolves.toMatchObject({
+        success: false
+      });
+    }
+    expect(api.uploadObject).not.toHaveBeenCalled();
+  });
+
+  it("propagates upload and public URL failures", async () => {
+    const uploadFailure = createImageService(apiStub({
+      uploadObject: vi.fn().mockResolvedValue(
+        fail("STORAGE_UPLOAD_FAILED", "上传失败")
+      )
+    }), { fetcher: blobFetcher("image/jpeg") });
+    await expect(uploadFailure.uploadAvatar({
+      userId: "user-1",
+      image: "data:image/jpeg;base64,AAAA"
+    })).resolves.toMatchObject({
+      success: false,
+      error: { code: "STORAGE_UPLOAD_FAILED" }
+    });
+
+    const publicUrlFailure = createImageService(apiStub({
+      getPublicUrl: vi.fn(() =>
+        fail("STORAGE_PUBLIC_URL_FAILED", "公开地址读取失败")
+      )
+    }), { fetcher: blobFetcher("image/jpeg") });
+    await expect(publicUrlFailure.uploadAvatar({
+      userId: "user-1",
+      image: "data:image/jpeg;base64,AAAA"
+    })).resolves.toMatchObject({
+      success: false,
+      error: { code: "STORAGE_PUBLIC_URL_FAILED" }
+    });
+  });
+
+  it("rejects missing or unsafe public avatar URLs", async () => {
+    for (const value of [
+      null,
+      "data:image/jpeg;base64,AAAA",
+      "blob:https://example.com/avatar"
+    ]) {
+      const service = createImageService(apiStub({
+        getPublicUrl: vi.fn(() => ok(value))
+      }), { fetcher: blobFetcher("image/jpeg") });
+      await expect(service.uploadAvatar({
+        userId: "user-1",
+        image: "data:image/jpeg;base64,AAAA"
+      })).resolves.toMatchObject({
+        success: false,
+        error: { code: "AVATAR_PUBLIC_URL_INVALID" }
+      });
+    }
+  });
+});

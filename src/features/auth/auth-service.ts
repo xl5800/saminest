@@ -13,6 +13,15 @@ import type {
 } from "../../types/auth";
 import { normalizeAuthError } from "./auth-errors";
 import {
+  imageService,
+  type ImageService
+} from "../publish/image-service";
+import {
+  isLegacyAvatarDataUrl,
+  isSafeAvatarMetadataUrl,
+  isUnsafeAvatarMetadataValue
+} from "../../utils/avatar";
+import {
   createAuthSessionCoordinator,
   ensureRecoverySession as restoreRecoverySession,
   isPasswordRecoveryUrl,
@@ -39,6 +48,35 @@ export interface CompleteSupabaseAuthInput {
   adminEmail: string;
   mode?: AuthCompletionMode;
 }
+
+export interface SaveAvatarInput {
+  userId: string;
+  image: string;
+}
+
+export interface LegacyAvatarMigrationInput {
+  userId: string;
+  metadataAvatarUrl?: unknown;
+  profileAvatarUrl?: unknown;
+}
+
+export interface AvatarSaveOutcome {
+  avatarUrl: string;
+  requiresReauthentication: true;
+}
+
+export interface DisplayNameSaveOutcome {
+  userId: string;
+  user: AuthUser;
+}
+
+export interface AvatarMigrationOutcome {
+  migrated: boolean;
+  avatarUrl: string;
+  requiresReauthentication: boolean;
+}
+
+type AvatarImageService = Pick<ImageService, "uploadAvatar">;
 
 export interface AuthService {
   normalizeEmail(value: unknown): string;
@@ -85,6 +123,15 @@ export interface AuthService {
     email: string;
     redirectTo: string;
   }): Promise<Result<null>>;
+  updateDisplayName(
+    requestedUserId: string,
+    displayName: string
+  ): Promise<Result<DisplayNameSaveOutcome>>;
+  saveAvatar(input: SaveAvatarInput): Promise<Result<AvatarSaveOutcome>>;
+  needsAvatarMigration(input: LegacyAvatarMigrationInput): boolean;
+  migrateLegacyAvatar(
+    input: LegacyAvatarMigrationInput
+  ): Promise<Result<AvatarMigrationOutcome>>;
   resetPassword(
     input: RecoverySessionOptions & { password: string },
     effects: AuthEffects
@@ -130,7 +177,8 @@ function serviceFailure<T>(cause: unknown): Result<T> {
 
 export function createAuthService(
   api: AuthApi = authApi,
-  profileApi: UsersApi = usersApi
+  profileApi: UsersApi = usersApi,
+  avatarImages: AvatarImageService = imageService
 ): AuthService {
   const sessions = createAuthSessionCoordinator(api);
   const profileCache = new Map<string, AuthProfile>();
@@ -145,17 +193,40 @@ export function createAuthService(
     Promise<Result<AuthFlowOutcome>>
   >();
   const completedOutcomes = new Map<string, AuthFlowOutcome>();
+  const avatarMigrationInFlight = new Map<
+    string,
+    Promise<Result<AvatarMigrationOutcome>>
+  >();
+  const avatarSaveInFlight = new Map<
+    string,
+    {
+      image: string;
+      promise: Promise<Result<AvatarSaveOutcome>>;
+    }
+  >();
+  const avatarSaveTokens = new Map<string, number>();
+  const displayNameSaveTokens = new Map<string, number>();
+  let nextAvatarSaveToken = 0;
+  let nextDisplayNameSaveToken = 0;
 
   const resetAuthCycle = (userId?: string) => {
     if (userId) {
       profileCache.delete(userId);
       profileInFlight.delete(userId);
       completedOutcomes.delete(userId);
+      avatarMigrationInFlight.delete(userId);
+      avatarSaveInFlight.delete(userId);
+      avatarSaveTokens.delete(userId);
+      displayNameSaveTokens.delete(userId);
       return;
     }
     profileCache.clear();
     profileInFlight.clear();
     completedOutcomes.clear();
+    avatarMigrationInFlight.clear();
+    avatarSaveInFlight.clear();
+    avatarSaveTokens.clear();
+    displayNameSaveTokens.clear();
   };
 
   const ensureProfile = async (
@@ -362,6 +433,208 @@ export function createAuthService(
     }
   };
 
+  const requireActiveUser = async (userId: string): Promise<Result<null>> => {
+    const session = await api.getSession();
+    if (!session.success) return session;
+    if (session.data?.user?.id !== userId) {
+      return fail(
+        "AUTH_SESSION_CHANGED",
+        "登录状态已经变化，请重新登录后再保存资料。"
+      );
+    }
+    return ok(null);
+  };
+
+  const beginAvatarSave = (userId: string): number => {
+    const token = ++nextAvatarSaveToken;
+    avatarSaveTokens.set(userId, token);
+    return token;
+  };
+
+  const isLatestAvatarSave = (userId: string, token: number): boolean => (
+    avatarSaveTokens.get(userId) === token
+  );
+
+  const supersededAvatarSave = <T>(): Result<T> => fail(
+    "AVATAR_SAVE_SUPERSEDED",
+    "已改用最后一次选择的头像。"
+  );
+
+  const beginDisplayNameSave = (userId: string): number => {
+    const token = ++nextDisplayNameSaveToken;
+    displayNameSaveTokens.set(userId, token);
+    return token;
+  };
+
+  const isLatestDisplayNameSave = (
+    userId: string,
+    token: number
+  ): boolean => displayNameSaveTokens.get(userId) === token;
+
+  const supersededDisplayNameSave = <T>(): Result<T> => fail(
+    "PROFILE_SAVE_SUPERSEDED",
+    "已改用最后一次提交的用户资料。"
+  );
+
+  const saveAvatar = (
+    input: SaveAvatarInput
+  ): Promise<Result<AvatarSaveOutcome>> => {
+    const userId = String(input.userId || "").trim();
+    if (!userId) {
+      return Promise.resolve(fail("AUTH_USER_MISSING", "无法读取登录用户。"));
+    }
+    const image = String(input.image || "");
+    const current = avatarSaveInFlight.get(userId);
+    if (current?.image === image) return current.promise;
+    const token = beginAvatarSave(userId);
+    const pending = safely<AvatarSaveOutcome>(async () => {
+      const initialSession = await requireActiveUser(userId);
+      if (!initialSession.success) return initialSession;
+      const uploaded = await avatarImages.uploadAvatar({
+        userId,
+        image
+      });
+      if (!uploaded.success) return uploaded;
+      if (!isLatestAvatarSave(userId, token)) {
+        return supersededAvatarSave();
+      }
+      if (!isSafeAvatarMetadataUrl(uploaded.data)) {
+        return fail(
+          "AUTH_AVATAR_METADATA_UNSAFE",
+          "头像必须先上传后再保存，请重新选择图片。"
+        );
+      }
+
+      const currentSession = await requireActiveUser(userId);
+      if (!currentSession.success) return currentSession;
+      if (!isLatestAvatarSave(userId, token)) {
+        return supersededAvatarSave();
+      }
+      const metadata = await api.updateMetadata({ avatar_url: uploaded.data });
+      if (!metadata.success) return metadata;
+      if (metadata.data?.id !== userId) {
+        return fail(
+          "AUTH_SESSION_CHANGED",
+          "登录状态已经变化，请重新登录后再保存头像。"
+        );
+      }
+      if (!isLatestAvatarSave(userId, token)) {
+        return supersededAvatarSave();
+      }
+      const verifiedSession = await requireActiveUser(userId);
+      if (!verifiedSession.success) return verifiedSession;
+      const profile = await profileApi.updateAvatar(userId, uploaded.data);
+      if (!profile.success) return profile;
+      const finalSession = await requireActiveUser(userId);
+      if (!finalSession.success) return finalSession;
+      if (!isLatestAvatarSave(userId, token)) {
+        return supersededAvatarSave();
+      }
+      return ok({
+        avatarUrl: uploaded.data,
+        requiresReauthentication: true
+      });
+    }).finally(() => {
+      if (avatarSaveInFlight.get(userId)?.promise === pending) {
+        avatarSaveInFlight.delete(userId);
+      }
+    });
+    avatarSaveInFlight.set(userId, { image, promise: pending });
+    return pending;
+  };
+
+  const needsAvatarMigration = (
+    input: LegacyAvatarMigrationInput
+  ): boolean => (
+    isUnsafeAvatarMetadataValue(input.metadataAvatarUrl)
+    || isUnsafeAvatarMetadataValue(input.profileAvatarUrl)
+  );
+
+  const migrateLegacyAvatar = (
+    input: LegacyAvatarMigrationInput
+  ): Promise<Result<AvatarMigrationOutcome>> => {
+    const userId = String(input.userId || "").trim();
+    if (!userId) {
+      return Promise.resolve(fail("AUTH_USER_MISSING", "无法读取登录用户。"));
+    }
+    const current = avatarMigrationInFlight.get(userId);
+    if (current) return current;
+
+    const pending = safely(async (): Promise<Result<AvatarMigrationOutcome>> => {
+      if (!needsAvatarMigration(input)) {
+        const avatarUrl = isSafeAvatarMetadataUrl(input.profileAvatarUrl)
+          ? input.profileAvatarUrl
+          : isSafeAvatarMetadataUrl(input.metadataAvatarUrl)
+            ? input.metadataAvatarUrl
+            : "";
+        return ok({
+          migrated: false,
+          avatarUrl,
+          requiresReauthentication: false
+        });
+      }
+
+      const source = isSafeAvatarMetadataUrl(input.profileAvatarUrl)
+        ? input.profileAvatarUrl
+        : isSafeAvatarMetadataUrl(input.metadataAvatarUrl)
+          ? input.metadataAvatarUrl
+          : isLegacyAvatarDataUrl(input.profileAvatarUrl)
+            ? input.profileAvatarUrl
+            : isLegacyAvatarDataUrl(input.metadataAvatarUrl)
+              ? input.metadataAvatarUrl
+              : "";
+
+      if (!source) {
+        const token = beginAvatarSave(userId);
+        const active = await requireActiveUser(userId);
+        if (!active.success) return active;
+        if (!isLatestAvatarSave(userId, token)) {
+          return supersededAvatarSave();
+        }
+        const metadata = await api.updateMetadata({ avatar_url: "" });
+        if (!metadata.success) return metadata;
+        if (metadata.data?.id !== userId) {
+          return fail(
+            "AUTH_SESSION_CHANGED",
+            "登录状态已经变化，请重新登录后再保存头像。"
+          );
+        }
+        if (!isLatestAvatarSave(userId, token)) {
+          return supersededAvatarSave();
+        }
+        const verified = await requireActiveUser(userId);
+        if (!verified.success) return verified;
+        const profile = await profileApi.updateAvatar(userId, "");
+        if (!profile.success) return profile;
+        const finalSession = await requireActiveUser(userId);
+        if (!finalSession.success) return finalSession;
+        if (!isLatestAvatarSave(userId, token)) {
+          return supersededAvatarSave();
+        }
+        return ok({
+          migrated: true,
+          avatarUrl: "",
+          requiresReauthentication: true
+        });
+      }
+
+      const saved = await saveAvatar({ userId, image: source });
+      if (!saved.success) return saved;
+      return ok({
+        migrated: true,
+        avatarUrl: saved.data.avatarUrl,
+        requiresReauthentication: true
+      });
+    }).finally(() => {
+      if (avatarMigrationInFlight.get(userId) === pending) {
+        avatarMigrationInFlight.delete(userId);
+      }
+    });
+
+    avatarMigrationInFlight.set(userId, pending);
+    return pending;
+  };
+
   const service: AuthService = {
     normalizeEmail: normalizeAuthEmail,
     isEmailVerified: isSupabaseEmailVerified,
@@ -436,6 +709,70 @@ export function createAuthService(
         )
       );
     },
+
+    updateDisplayName(requestedUserId, displayName) {
+      const userId = String(requestedUserId || "").trim();
+      if (!userId) {
+        return Promise.resolve(
+          fail("AUTH_USER_MISSING", "无法读取登录用户。")
+        );
+      }
+      const name = String(displayName || "").trim();
+      if (!name) {
+        return Promise.resolve(
+          fail("AUTH_DISPLAY_NAME_MISSING", "请填写用户昵称。")
+        );
+      }
+      const token = beginDisplayNameSave(userId);
+      return safely(async () => {
+        const initialSession = await requireActiveUser(userId);
+        if (!initialSession.success) return initialSession;
+        if (!isLatestDisplayNameSave(userId, token)) {
+          return supersededDisplayNameSave();
+        }
+
+        const metadata = await api.updateMetadata({
+          display_name: name,
+          name
+        });
+        if (!metadata.success) return metadata;
+        const updatedUser = metadata.data;
+        if (!updatedUser || updatedUser.id !== userId) {
+          return fail(
+            "AUTH_SESSION_CHANGED",
+            "登录状态已经变化，请重新登录后再保存资料。"
+          );
+        }
+        if (!isLatestDisplayNameSave(userId, token)) {
+          return supersededDisplayNameSave();
+        }
+
+        const activeSession = await requireActiveUser(userId);
+        if (!activeSession.success) return activeSession;
+        if (!isLatestDisplayNameSave(userId, token)) {
+          return supersededDisplayNameSave();
+        }
+        const profile = await profileApi.updateDisplayName(userId, name);
+        if (!profile.success) return profile;
+        if (profile.data.userId !== userId) {
+          return fail(
+            "PROFILE_USER_MISMATCH",
+            "用户资料写入目标不一致，请重新登录后再试。"
+          );
+        }
+
+        const finalSession = await requireActiveUser(userId);
+        if (!finalSession.success) return finalSession;
+        if (!isLatestDisplayNameSave(userId, token)) {
+          return supersededDisplayNameSave();
+        }
+        return ok({ userId, user: updatedUser });
+      });
+    },
+
+    saveAvatar,
+    needsAvatarMigration,
+    migrateLegacyAvatar,
 
     resetPassword(input, effects) {
       return sessions.runExplicit("reset-password", () => safely(async () => {

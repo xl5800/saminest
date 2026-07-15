@@ -21,3 +21,8 @@ export interface ListingImagesUploadInput {
   isUploadAvailable(): boolean;
   getUserId(): string;
 }
+
+export interface AvatarUploadInput {
+  userId: string;
+  image: string;
+}
